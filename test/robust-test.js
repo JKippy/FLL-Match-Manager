@@ -1,5 +1,5 @@
 // v0.5.1 robustness regression tests (Testing & Validation findings + projector call chime).   node test/robust-test.js
-// Malformed HTTP / WS / X-File-Name, CSV caps, __proto__ device id, clients list only for authed controls, PIN lockout,
+// Request parsing hardening, CSV limits, device id validation, clients list only for authed controls, PIN limits,
 // goto validation + stale NEXT refusal, persist-before-ack (kill -9), corrupt state.json -> .bak, restart across a match end,
 // END from the local clock while the server is down (once), heartbeat stall -> stale -> no cues, control-page write-on-change,
 // iOS revive hooks + sound hint, soft call chime on the projector only (one-shot, no replay, own volume, nothing visual).
@@ -33,17 +33,17 @@ function req(method, p, headers, body) {
 (async () => {
   await startServer();
   // ---------- 1. malformed requests ----------
-  check('GET http://[ -> 400, no crash', /400/.test(await raw('GET http://[ HTTP/1.1\r\nHost: x\r\n\r\n')));
-  check('WS upgrade with a malformed URL -> 400, no crash', /400/.test(await raw('GET http://[ HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n')));
+  check('request parsing: bad request line -> 400', /400/.test(await raw('GET http://[ HTTP/1.1\r\nHost: x\r\n\r\n')));
+  check('request parsing: bad upgrade -> 400', /400/.test(await raw('GET http://[ HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n')));
   const up = await req('POST', '/api/sound/start', { 'X-File-Name': '%', 'X-FLL-PIN': PIN, 'Content-Type': 'audio/wav' }, Buffer.alloc(100));
-  check('upload with X-File-Name "%" -> 400, no crash', up.status === 400, up);
+  check('request parsing: bad upload header -> 400', up.status === 400, up);
   await raw('garbage\r\n\r\n');
-  check('server still alive after malformed requests', (await req('GET', '/')).status === 200 && srv.exitCode == null);
+  check('server healthy after request parsing checks', (await req('GET', '/')).status === 200 && srv.exitCode == null);
 
   // ---------- 6. CSV caps ----------
   const big = 'Match,Time,Table 1,Table 2\n' + Array.from({ length: 30000 }, (_, i) => `${i + 1},9:00,${100 + i},${200 + i}`).join('\n');
   let t0 = Date.now(), err = null; try { Sched.parseCSV(big); } catch (e) { err = e.message; }
-  check('30k-row CSV is refused quickly (no freeze)', !!err && Date.now() - t0 < 500, { err, ms: Date.now() - t0 });
+  check('oversized CSV is refused quickly', !!err && Date.now() - t0 < 500, { err, ms: Date.now() - t0 });
   const okCsv = 'Match,Time,Table 1,Table 2\n' + Array.from({ length: 1500 }, (_, i) => `${i + 1},9:00,${100 + i},${200 + i}`).join('\n');
   t0 = Date.now(); const s15 = Sched.parseCSV(okCsv);
   check('1500-match CSV still parses fast', s15.matches.length === 1500 && Date.now() - t0 < 1000, { n: s15.matches.length, ms: Date.now() - t0 });
@@ -67,14 +67,14 @@ function req(method, p, headers, body) {
     // ---------- 6. __proto__ id, clients list ----------
     const evil = await mk(`${BASE}/display?role=main&autostart=1`, 'window.__DEVICE_ID="__proto__";');
     await sleep(800);
-    check('display with deviceId "__proto__" does not crash or pollute the server', srv.exitCode == null && (await req('GET', '/')).status === 200);
+    check('reserved device id is handled safely', srv.exitCode == null && (await req('GET', '/')).status === 200);
     const r1 = await cmd('displayPref', { deviceId: '__proto__', vol: 0.5 });
-    check('displayPref for "__proto__" is refused', r1.ok === false, r1);
+    check('displayPref for a reserved id is refused', r1.ok === false, r1);
     await evil.close();
     const anon = await mk(`${BASE}/control`, 'window.__clientsSeen=0;');
     await anon.evaluate(() => FLL.on('clients', () => window.__clientsSeen++));
     await sleep(1500);
-    check('unauthenticated control page gets no clients list', await anon.evaluate(() => window.__clientsSeen) === 0);
+    check('clients list only for signed-in controls', await anon.evaluate(() => window.__clientsSeen) === 0);
 
     // ---------- 5. PIN lockout ----------
     await anon.evaluate(() => { window.__auth = []; FLL.on('auth', (ok, m) => window.__auth.push({ ok, error: m && m.error, retryIn: m && m.retryIn })); });
@@ -82,16 +82,16 @@ function req(method, p, headers, body) {
     await sleep(200);
     let auths = await anon.evaluate(() => window.__auth);
     const locked = auths[auths.length - 1];
-    check('6th wrong PIN is locked out with a retry time', locked && !locked.ok && locked.retryIn > 0 && /try again|wait|locked/i.test(locked.error || ''), auths.slice(-2));
+    check('repeated wrong PINs get a retry delay', locked && !locked.ok && locked.retryIn > 0 && /try again|wait|locked/i.test(locked.error || ''), auths.slice(-2));
     await anon.evaluate(p => FLL.send({ t: 'auth', pin: p }), PIN); await sleep(200);
     auths = await anon.evaluate(() => window.__auth);
-    check('correct PIN is refused while locked out', auths[auths.length - 1].ok === false);
+    check('PIN waits for the retry delay', auths[auths.length - 1].ok === false);
     await sleep((locked.retryIn || 1000) + 300);
     await anon.evaluate(p => FLL.send({ t: 'auth', pin: p }), PIN); await sleep(300);
     auths = await anon.evaluate(() => window.__auth);
-    check('correct PIN works after the lockout expires', auths[auths.length - 1].ok === true, auths[auths.length - 1]);
+    check('correct PIN works after the delay', auths[auths.length - 1].ok === true, auths[auths.length - 1]);
     const lockedUp = await req('POST', '/api/sound/start', { 'X-File-Name': 'a.wav', 'X-FLL-PIN': 'bad', 'Content-Type': 'audio/wav' }, Buffer.alloc(10));
-    check('wrong PIN on upload is refused (401/403/429)', [401, 403, 429].includes(lockedUp.status), lockedUp.status);
+    check('wrong PIN on upload is refused', [401, 403, 429].includes(lockedUp.status), lockedUp.status);
     await anon.close();
 
     // ---------- schedule ----------
