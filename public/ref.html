@@ -94,6 +94,10 @@
   const key = String(qs.get('k') || '').trim();
   FLL.connect({ role: 'ref', view: table ? 'ref ' + table : 'ref', name: table ? 'Ref T' + table : 'Ref', table, key, pin: localStorage.getItem('fll.pin') || '' });
   const linkBad = () => !!table && FLL.refOk === false;
+  // Keep the phone screen on while the ref page is open (FLL-021). Browsers only allow the wake lock / keep-awake video after a
+  // tap, so arm it on the first touch anywhere; sync.js re-arms it after the phone wakes or the tab comes back.
+  const armWake = () => { FLL.keepAwake(); ['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => document.removeEventListener(ev, armWake, true)); };
+  ['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, armWake, true));
   FLL.on('error', e => toast(e));
 
   function tablesKnown() {
