@@ -99,6 +99,9 @@
       const r = { ok: false, cmd: p.cmd, error: 'Connection dropped: “' + label(p.cmd) + '” may not have gone through. Check the screen once reconnected, then tap again only if needed.' };
       S.refused(r); p.done(r);
     }
+    // The device itself reports it is offline (Wi-Fi dropped): the server is unreachable, not frozen, so the match most likely
+    // goes on. Trust the local clock like a clean close (END still plays once). Only a silent link on a "working" network is stale.
+    if (stale && navigator.onLine === false) stale = false;
     if (stale && !S.stale) console.warn('[FLL] no reply from the timer server for ' + HB_MS + ' ms: reconnecting, sounds paused until the state is fresh');
     if (stale) S.stale = true;
     S.connected = false; S.synced = false;
