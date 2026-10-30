@@ -226,6 +226,20 @@ function req(method, p, headers, body) {
     await waitFor(() => control.evaluate(() => FLL.connected && FLL.synced), 8000);
     const s4 = await st();
     check('schedule restored from the backup', s4 && (await control.evaluate(() => FLL.schedule && FLL.schedule.matches.length)) === 24);
+
+    // ---------- automatic field break ends on its own ----------
+    const pad = n => String(n).padStart(2, '0'), iso = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+    const tb = Date.now();
+    await cmd('set', { duration: 2000 });
+    await cmd('breakConfig', { aheadMin: 0, minBreakSec: 0, auto: true, autoDelaySec: 1 });
+    await cmd('scheduleCSV', { text: `Match,Time,Table 1\n1,${iso(tb)},101\n2,${iso(tb + 12000)},102\n`, name: 'auto-break' });
+    await sleep(300); await cmd('start', { force: true });
+    const inBreak = await waitFor(async () => { const s = await st(); return s.kind === 'break' && s.status === 'running'; }, 8000);
+    const b5 = await st();
+    check('auto field break starts after the match', inBreak, { kind: b5.kind, status: b5.status });
+    await sleep(Math.max(0, b5.startAt + b5.duration - Date.now()) + 2500);
+    const a5 = await st();
+    check('auto field break ends on its own and the next match is ready', a5.kind !== 'break' && a5.status === 'idle' && a5.match.current === 1, { kind: a5.kind, status: a5.status, current: a5.match && a5.match.current });
   } catch (e) { console.log('ERROR', e.stack); failed++; }
   await browser.close().catch(() => {});
   await stopServer('SIGTERM');

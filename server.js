@@ -202,7 +202,7 @@ function finishRun(endedAt) {
     const seq = timer.seq;
     clearTimeout(autoSessionT);
     const wait = Math.max(0, (+store.breaks.autoDelaySec || 0) * 1000 - (now() - m.endedAt));
-    autoSessionT = setTimeout(() => { if (timer.status === 'done' && timer.seq === seq) { try { endSession(); save(); broadcastState(); } catch (e) { console.error('auto end-session:', e.message); } } }, wait);
+    autoSessionT = setTimeout(() => { if (timer.status === 'done' && timer.seq === seq) { try { endSession(); scheduleDone(); save(); broadcastState(); } catch (e) { console.error('auto end-session:', e.message); } } }, wait);
   }
 }
 function scheduleDone() {
