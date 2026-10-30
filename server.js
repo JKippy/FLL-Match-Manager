@@ -24,6 +24,9 @@ const PUBLIC = path.join(__dirname, 'public');
 const SOUND_DIR = path.join(DATA_DIR, 'sounds');
 const CUES = ['start', 'warn', 'end', 'abort', 'call'];
 const MAX_SOUND = 8 * 1024 * 1024;
+// Uploaded sounds are stored and served with a type taken from this list (by extension), never from the request.
+const EXT_TYPE = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.webm': 'audio/webm', '.flac': 'audio/flac' };
+const soundType = stored => EXT_TYPE[path.extname(String(stored || '')).toLowerCase()] || 'application/octet-stream';
 fs.mkdirSync(SOUND_DIR, { recursive: true });
 
 const now = () => Date.now();
@@ -79,7 +82,13 @@ try {
   const saved = readSaved(); if (!saved) throw null;
   for (const k of Object.keys(store)) if (saved[k] !== undefined) store[k] = (saved[k] === null || store[k] === null) ? saved[k] : Object.assign({}, store[k], saved[k]);
   store.displays = nullProto(store.displays);
-  for (const c of CUES) store.sound.cues[c] = Object.assign({ vol: 1, file: null }, store.sound.cues[c]);
+  for (const c of CUES) {
+    const cue = store.sound.cues[c] = Object.assign({ vol: 1, file: null }, store.sound.cues[c]);
+    if (cue.file) {   // older saves: keep only a plain stored file name inside data/sounds and a type from the extension
+      const st = path.basename(String(cue.file.stored || ''));
+      if (!st || !EXT_TYPE[path.extname(st).toLowerCase()]) cue.file = null; else { cue.file.stored = st; cue.file.type = EXT_TYPE[path.extname(st).toLowerCase()]; }
+    }
+  }
   // A match that was running when the server stopped keeps running (startAt is wall-clock based).
   // One that reached 0:00 while we were down is finished below exactly like a normal end (finishRun), and an
   // expired field break ends like a normal break end (match-ready).
@@ -652,7 +661,7 @@ function handleHttp(req, res) {
       const stored = mm[1] + '-' + now() + ext;
       fs.writeFile(path.join(SOUND_DIR, stored), Buffer.concat(chunks), err => {
         if (err) return json(res, 500, { error: String(err) });
-        cue.file = { name, type: type || 'audio/' + ext.slice(1), size, stored, v: now() };
+        cue.file = { name, type: EXT_TYPE[ext], size, stored, v: now() };
         save(); broadcastConfig(); json(res, 200, { ok: true, file: cue.file });
       });
     });
@@ -664,7 +673,8 @@ function handleHttp(req, res) {
     if (!f) { res.writeHead(404); return res.end(); }
     return fs.readFile(path.join(SOUND_DIR, f.stored), (err, data) => {
       if (err) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'Content-Type': f.type, 'Cache-Control': 'max-age=31536000' }); res.end(data);
+      res.writeHead(200, { 'Content-Type': soundType(f.stored), 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': 'inline; filename="' + mm[1] + path.extname(f.stored) + '"', 'Cache-Control': 'max-age=31536000' }); res.end(data);
     });
   }
   let p = ROUTES[u.pathname] || u.pathname;
