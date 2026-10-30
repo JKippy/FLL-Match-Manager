@@ -513,7 +513,9 @@ async function runCommand(msg, c) {
     // ----- schedule -----
     case 'scheduleCSV': {
       const s = Sched.parseCSV(String(msg.text || ''), { date: msg.date || null, name: msg.name || 'Uploaded schedule', source: msg.source || 'csv' });
-      setSchedule(s, true); c.send({ t: 'notice', text: `Loaded ${s.matches.length} matches` });
+      setSchedule(s, true);
+      if (s.dropped) c.send({ t: 'error', error: `Loaded ${s.matches.length} matches, but ${s.dropped.length} team${s.dropped.length === 1 ? ' was' : 's were'} dropped (two columns map to the same table). See the warning under Match schedule.` });
+      else c.send({ t: 'notice', text: `Loaded ${s.matches.length} matches` });
       return;
     }
     case 'nexusFetch': {
