@@ -69,4 +69,10 @@ t('Sample 6-table schedule: 24 matches, names, 5-min spacing with breaks, A+B / 
   assert.strictEqual(hm(p.matches[16].time) - hm(p.matches[15].time), 50);    // lunch 10:55 -> 11:45
   p.matches.forEach((m, i) => assert.deepStrictEqual(S.pairsFor(m, S.DEFAULT_LAYOUT), i % 2 ? ['C'] : ['A', 'B']));
 });
+t('CSV export: cells are quoted for spreadsheets and import back unchanged', () => {
+  const p = S.parseCSV('Match,Time,Table 1,Table 2,Table 3\n1,9:30 AM,=A1 - One,"+2, Two",@x - Three\n2,9:35 AM,-4 - Four,"Say ""hi""",5555\n');
+  const out = S.toCSV(p), cells = out.split('\n').slice(1).join(',');
+  assert.ok(!/(^|,)"?[=+\-@]/.test(cells), out);
+  assert.deepStrictEqual(S.parseCSV(out).matches.map(m => m.teams), p.matches.map(m => m.teams));
+});
 console.log(`\n${pass} unit tests passed`);
