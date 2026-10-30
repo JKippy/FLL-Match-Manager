@@ -15,6 +15,7 @@ cd fll-timer
 npm start -- --pin 2468          # port 8080, control page locked with PIN 2468
 npm start -- --port 80 --pin 2468
 # or: PORT=8080 PIN=2468 node server.js      (--data DIR / DATA_DIR = where state + uploaded sounds are saved, default ./data)
+# screens normally use the laptop's IP address; if they use a DNS name (other than a short LAN name or *.local), add  --allow-host timer.example.org
 ```
 
 The console prints the LAN addresses, for example:
