@@ -47,3 +47,44 @@ jobs:
           name: screenshots
           path: screenshots/
           if-no-files-found: ignore
+
+  # Separate from test:all. playwright-core does not download a browser, and
+  # WebKit needs system libraries that a Chrome-only machine does not have.
+  webkit:
+    name: test (Node 22, WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/package-lock.json
+
+      - name: Install test dependencies
+        run: npm ci --prefix test
+
+      - name: Cache Playwright WebKit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-webkit-${{ hashFiles('test/package-lock.json') }}
+
+      - name: Install WebKit and system dependencies
+        working-directory: test
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: npx playwright-core install --with-deps --no-progress webkit
+
+      - name: Run WebKit click regression
+        run: npm run test:webkit
+
+      - name: Upload click report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-clicks
+          path: screenshots/webkit-clicks-*.json
+          if-no-files-found: ignore

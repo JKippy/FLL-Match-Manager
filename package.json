@@ -15,7 +15,8 @@
     "test:robust": "node test/robust-test.js",
     "test:break": "node test/break-queue-test.js",
     "test:v4": "node test/v4-test.js",
-    "test:ref": "node test/ref-test.js"
+    "test:ref": "node test/ref-test.js",
+    "test:webkit": "node test/webkit-click-test.js"
   },
   "engines": {
     "node": ">=18"
