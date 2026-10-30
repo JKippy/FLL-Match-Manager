@@ -792,7 +792,9 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`    Queuing screen:     ${u.url}/display?role=queue`);
     console.log(`    Table referees:     ${u.url}/ref?table=1   (2, 3 …)`);
   }
-  console.log(PIN ? `\n  Control PIN is set (${PIN.length} digits).` : '\n  No control PIN set. Use  npm start -- --pin 1234  to lock the control page.');
+  if (!PIN) console.warn('\n  WARNING: no control PIN set. Anyone on this network can start, stop or change the timer.\n           Restart with  npm start -- --pin <your-own-pin>  (choose a new PIN for each event).');
+  else if (/^(\d)\1+$|^(0123|1234|2345|3456|4567|5678|6789|9876|4321)$/.test(PIN)) console.warn(`\n  WARNING: the control PIN is easy to guess. Choose your own PIN for this event.`);
+  else console.log(`\n  Control PIN is set (${PIN.length} digits).`);
   console.log(`  Settings, schedule and uploaded sounds are saved in ${DATA_DIR}`);
   if (urls[0]) {
     try { const qr = require('qrcode-terminal'); console.log(`\n  Scan to pick a display (${urls[0].url}/display):\n`); qr.generate(urls[0].url + '/display', { small: true }); }
