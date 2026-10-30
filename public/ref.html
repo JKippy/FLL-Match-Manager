@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0d10">
+<title>FLL Timer – Table Referee</title>
+<style>
+  :root { --bg:#0b0d10; --card:#15181d; --line:#262a31; --fg:#e9edf2; --dim:#8a8f98; --run:#3ddc84; --warn:#ffc400; --blue:#4c8dff; --brk:#ff9a2e; --call:#ffb347; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; -webkit-text-size-adjust:100%; }
+  body { min-height:100vh; min-height:100dvh; display:flex; flex-direction:column; gap:12px;
+    padding:max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+  header { display:flex; align-items:center; gap:10px; }
+  header h1 { margin:0; font-size:22px; font-weight:800; }
+  header h1 small { display:block; color:var(--dim); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+  header .conn { margin-left:auto; color:var(--dim); font-size:13px; display:flex; align-items:center; gap:6px; }
+  header a { color:var(--blue); font-size:13px; text-decoration:none; }
+  .dot { width:10px; height:10px; border-radius:50%; background:#ff3b30; display:inline-block; } .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px; text-align:center; }
+  .kicker { color:var(--blue); font-weight:900; letter-spacing:.2em; text-transform:uppercase; font-size:14px; }
+  .kicker.live { color:var(--run); } .kicker.brk { color:var(--brk); }
+  .mline { font-size:22px; font-weight:800; margin:6px 0 2px; } .mline span { color:var(--dim); font-weight:600; font-size:16px; }
+  .team { font-size:min(26vw, 120px); font-weight:900; line-height:1; font-variant-numeric:tabular-nums; margin:10px 0 4px; letter-spacing:-.02em; }
+  .tname { color:#cfd4da; font-size:18px; min-height:1.3em; }
+  .note { margin-top:10px; color:var(--dim); font-size:15px; line-height:1.35; }
+  .note b { color:var(--fg); }
+  .clock { margin-top:8px; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; color:#cfd4da; }
+  .clock.brk { color:var(--brk); } .clock.live { color:var(--run); }
+  button { font:inherit; border:0; cursor:pointer; touch-action:manipulation; -webkit-user-select:none; user-select:none; -webkit-appearance:none; appearance:none; }
+  #readyBtn { width:100%; min-height:132px; border-radius:22px; font-size:34px; font-weight:900; letter-spacing:.06em; color:#fff; background:#2a3140; border:3px solid #3a4456; }
+  #readyBtn .s { display:block; font-size:15px; font-weight:700; letter-spacing:.02em; opacity:.85; margin-top:6px; }
+  #readyBtn.on { background:var(--run); color:#03210f; border-color:#7ff0b4; }
+  #readyBtn:disabled { opacity:.38; cursor:default; }
+  #callBtn { width:100%; min-height:72px; border-radius:18px; font-size:21px; font-weight:800; color:#1d1200; background:#ffd8a3; border:2px solid var(--call); }
+  #callBtn.called { background:var(--call); animation:pulse 1.6s ease-in-out infinite; }
+  #callBtn.acked { background:#1f6b45; color:#fff; border-color:var(--run); animation:none; }
+  #callBtn .s { display:block; font-size:14px; font-weight:700; opacity:.85; margin-top:2px; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 6px rgba(255,179,71,.28); } }
+  .hint { color:var(--dim); font-size:13px; text-align:center; line-height:1.4; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:12px; }
+  .grid a { display:block; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px 10px; text-align:center; color:#fff; text-decoration:none; font-size:24px; font-weight:800; }
+  .grid a small { display:block; color:var(--dim); font-size:13px; font-weight:700; margin-top:4px; }
+  #toast { position:fixed; left:50%; bottom:max(20px, env(safe-area-inset-bottom)); transform:translateX(-50%); background:#8a1f1a; color:#fff; padding:12px 16px; border-radius:12px; font-weight:700; z-index:20; display:none; width:max-content; max-width:92vw; text-align:center; }
+  #toast.ok { background:#1f6b45; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"><small>Table referee</small><span id="tname">Pick your table</span></h1>
+  <span class="conn"><span class="dot" id="dot"></span><span id="conn">connecting…</span></span>
+</header>
+
+<section id="picker" class="hidden">
+  <div class="hint" style="margin:6px 0 12px">Which table are you refereeing? Bookmark the page after choosing.</div>
+  <div class="grid" id="tables"></div>
+</section>
+
+<section id="ref" class="hidden" style="display:flex;flex-direction:column;gap:12px">
+  <div class="card" id="matchCard">
+    <div class="kicker" id="kicker">Your next match</div>
+    <div class="mline" id="mline">–</div>
+    <div class="team" id="team">–</div>
+    <div class="tname" id="teamName"></div>
+    <div class="clock" id="clock"></div>
+    <div class="note" id="note"></div>
+  </div>
+  <button id="readyBtn" disabled>TAP WHEN READY<span class="s" id="readySub">Your table, your team, mission models set</span></button>
+  <button id="callBtn">🙋 Call Head Ref<span class="s" id="callSub">Need a ruling or help? Tap once.</span></button>
+  <div class="hint" id="foot">Tap READY once your table is reset and your team is at the table. The Head Ref sees it, and the screens show “Ready” before the match starts.</div>
+</section>
+<div id="toast"></div>
+
+<script src="/sync.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  // Only touch the DOM when something changed (rewriting text every tick swallows taps in iOS Safari).
+  function setText(el, t) { if (typeof el === 'string') el = $(el); t = String(t); if (el.textContent !== t) el.textContent = t; }
+  function setHTML(el, h) { if (typeof el === 'string') el = $(el); if (el.__h !== h) { el.innerHTML = h; el.__h = h; } }
+  function setClass(el, c) { if (typeof el === 'string') el = $(el); if (el.className !== c) el.className = c; }
+  function toast(t, ok) { const el = $('toast'); el.textContent = t; el.className = ok ? 'ok' : ''; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = 'none', 4000); }
+
+  const qs = new URLSearchParams(location.search);
+  const table = String(qs.get('table') || qs.get('t') || '').trim();
+  window.__refTable = table;
+  FLL.connect({ role: 'ref', view: table ? 'ref ' + table : 'ref', name: table ? 'Ref T' + table : 'Ref' });
+  FLL.on('error', e => toast(e));
+
+  function tablesKnown() {
+    const s = new Set();
+    if (FLL.config) FLL.config.layout.pairs.forEach(p => p.tables.forEach(t => s.add(String(t))));
+    if (FLL.schedule) FLL.schedule.matches.forEach(m => Object.keys(m.teams).forEach(t => s.add(t)));
+    return [...s].sort((a, b) => a - b);
+  }
+  function pairOfTable(t) { const p = FLL.config && FLL.config.layout.pairs.find(p => p.tables.map(String).includes(String(t))); return p ? p.id : ''; }
+
+  function status() {
+    setClass('dot', 'dot ' + (FLL.connected ? (FLL.synced ? 'ok' : 'wait') : ''));
+    setText('conn', FLL.connected ? 'connected' : 'reconnecting…');
+  }
+  FLL.on('status', status); FLL.on('sync', status);
+
+  let cur = null;   // { i, live } the match the READY button applies to
+  function render() {
+    status();
+    if (!table) {
+      $('picker').classList.remove('hidden'); $('ref').classList.add('hidden');
+      setHTML('tables', tablesKnown().map(t => `<a href="/ref?table=${encodeURIComponent(t)}">${esc(FLL.tableName(t))}<small>${pairOfTable(t) ? 'Pair ' + esc(pairOfTable(t)) : ''}</small></a>`).join('') || '<div class="hint">Waiting for the timer server…</div>');
+      return;
+    }
+    $('picker').classList.add('hidden'); $('ref').classList.remove('hidden');
+    setText('tname', FLL.tableName(table) + (pairOfTable(table) ? ' · Pair ' + pairOfTable(table) : ''));
+    document.title = FLL.tableName(table) + ' – Referee';
+    const st = FLL.state, sch = FLL.schedule;
+    const known = tablesKnown();
+    if (!st || !FLL.config) return;
+    if (known.length && !known.includes(table)) {
+      setText('kicker', 'Unknown table'); setText('mline', `There is no ${FLL.tableName(table)} in this event`); setText('team', '–'); setText('teamName', '');
+      setHTML('note', '<a href="/ref" style="color:#4c8dff">Pick your table</a>'); $('readyBtn').disabled = true; cur = null; return;
+    }
+    const brk = FLL.isBreak(), r = FLL.remaining(), info = FLL.matchInfo();
+    const nx = sch ? FLL.nextForTable(table) : null;
+    cur = nx;
+    let kicker = 'Your next match', kcls = 'kicker', note = '', clock = '', ccls = 'clock';
+    if (!sch) { kicker = 'Waiting for the schedule'; note = 'The Head Ref hasn\'t loaded the match schedule yet.'; }
+    else if (!nx) { kicker = 'All done'; note = 'No more matches for this table. Thank you, ref! 🌿'; }
+    else {
+      const up = FLL.upcomingIdx(), upM = sch.matches[up];
+      if (nx.live) { kicker = 'Match in progress'; kcls = 'kicker live'; clock = FLL.fmt(r) + (st.status === 'paused' ? ' · paused' : ''); ccls = 'clock live'; }
+      else if (nx.i === up) {
+        kicker = brk ? 'Up next · field break' : (st.ready ? 'Starting soon' : 'Your match is next'); if (brk) kcls = 'kicker brk';
+        if (brk) { clock = 'Field break · ' + FLL.fmt(r); ccls = 'clock brk'; }
+      } else {
+        kicker = 'Your next match';
+        const liveM = info && info.liveIdx != null ? info.list[info.liveIdx] : null;
+        const other = liveM || upM;
+        if (other) note = `${liveM ? 'Now playing' : 'Next on the field'}: <b>${esc(FLL.matchLabel(other))}</b> (${esc(FLL.pairsOf(other).map(p => 'Pair ' + p).join(' + ') || 'other tables')}). Your table plays after that.`;
+        if (liveM) clock = 'Field: ' + FLL.fmt(r);
+        else if (brk) { clock = 'Field break · ' + FLL.fmt(r); ccls = 'clock brk'; }
+      }
+    }
+    setText('kicker', kicker); setClass('kicker', kcls);
+    setHTML('mline', nx ? `${esc(FLL.matchLabel(nx.m))} <span>· ${esc(nx.m.time != null ? FLL.clock(nx.m.time) : '')}</span>` : esc(sch ? '' : '–'));
+    setText('team', nx ? nx.m.teams[table] : '–');
+    setText('teamName', nx ? FLL.teamName(nx.m.teams[table]) : '');
+    setText('clock', clock); setClass('clock', ccls);
+    setHTML('note', note);
+    // READY toggle
+    const on = !!(nx && !nx.live && FLL.isReady(nx.i, table));
+    const b = $('readyBtn'), can = !!(nx && !nx.live && FLL.connected);
+    if (b.disabled !== !can) b.disabled = !can;
+    setClass(b, on ? 'on' : '');
+    const label = on ? '✓ READY' : nx && nx.live ? 'MATCH RUNNING' : 'TAP WHEN READY';
+    const sub = on ? `${FLL.tableName(table)} is ready for ${FLL.matchLabel(nx.m)} · tap to undo` : nx && nx.live ? 'Ready marks reset after the match' : nx ? `Mark ${FLL.tableName(table)} ready for ${FLL.matchLabel(nx.m)}` : 'Nothing to get ready for';
+    if (b.firstChild.nodeValue !== label) b.firstChild.nodeValue = label;
+    setText('readySub', sub);
+    window.__refState = { ready: on, matchIdx: nx ? nx.i : null, live: !!(nx && nx.live), called: callState() };
+    // Call Head Ref
+    const cs = callState(), cb = $('callBtn');
+    setClass(cb, cs === 'called' ? 'called' : cs === 'acked' ? 'acked' : '');
+    const cl = cs === 'called' ? '🙋 Head Ref called' : cs === 'acked' ? '✓ Head Ref is on the way' : '🙋 Call Head Ref';
+    if (cb.firstChild.nodeValue !== cl) cb.firstChild.nodeValue = cl;
+    setText('callSub', cs === 'called' ? 'Waiting for the Head Ref… tap to cancel' : cs === 'acked' ? 'They saw your call' : 'Need a ruling or help? Tap once.');
+  }
+  function callState() {
+    const c = FLL.calls && FLL.calls[table]; if (!c) return 'none';
+    if (!c.ackAt) return 'called';
+    return FLL.serverNow() - c.ackAt < 15000 ? 'acked' : 'none';
+  }
+  let busy = false;
+  $('readyBtn').addEventListener('click', async () => {
+    if (busy || !cur || cur.live) return; busy = true;
+    const on = !FLL.isReady(cur.i, table);
+    const r = await FLL.cmd('refReady', { table, index: cur.i, on });
+    busy = false; render();
+    if (r.ok && navigator.vibrate) try { navigator.vibrate(on ? 40 : 15); } catch (e) {}
+  });
+  $('callBtn').addEventListener('click', async () => {
+    const cs = callState();
+    await FLL.cmd(cs === 'called' ? 'refCancel' : 'refCall', { table });
+    render();
+  });
+  ['state', 'config', 'schedule', 'calls', 'status'].forEach(ev => FLL.on(ev, render));
+  setInterval(render, 250);
+  render();
+})();
+</script>
+</body>
+</html>

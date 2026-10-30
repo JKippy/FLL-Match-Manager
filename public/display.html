@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<title>FLL Timer – Display</title>
+<style>
+  :root { --fg:#fff; --run:#3ddc84; --warn:#ffc400; --end:#ff3b30; --dim:#8a8f98; --blue:#4c8dff; --card:#111418; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:#000; color:var(--fg); overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+  body { display:flex; flex-direction:column; user-select:none; -webkit-user-select:none; }
+  header { display:flex; align-items:center; gap:.6em; padding:max(10px, env(safe-area-inset-top)) 16px 6px; font-size:clamp(16px, 3vmin, 34px); color:var(--dim); }
+  #name { color:#fff; font-weight:700; cursor:pointer; }
+  #label { margin-left:auto; text-transform:uppercase; letter-spacing:.12em; font-weight:700; }
+  .dot { width:.7em; height:.7em; border-radius:50%; background:var(--end); flex:none; }
+  .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
+  .pill { padding:.15em .7em; border-radius:999px; font-weight:800; letter-spacing:.02em; text-transform:none; }
+  .pill.ok { background:rgba(61,220,132,.16); color:var(--run); } .pill.meh { background:rgba(255,196,0,.16); color:var(--warn); } .pill.bad { background:rgba(255,59,48,.18); color:var(--end); }
+  main { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; min-height:0; padding:0 3vw; }
+  .time { font-weight:800; font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; line-height:.9; letter-spacing:-.02em; }
+  .time.running { color:var(--run); } .time.warn { color:var(--warn); } .time.done { color:var(--end); }
+  .time.paused { animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:.25; } }
+  .banner { font-size:clamp(18px, 4.5vmin, 56px); font-weight:800; letter-spacing:.2em; color:var(--dim); text-transform:uppercase; min-height:1.2em; }
+  body.flash-end { animation:flash .5s 3; } @keyframes flash { 50% { background:#5a0000; } }
+  footer { display:flex; gap:1em; padding:4px 16px max(8px, env(safe-area-inset-bottom)); font-size:clamp(11px, 1.5vmin, 16px); color:#4b5058; }
+  footer span:last-child { margin-left:auto; }
+  /* plain + pair-playing timer */
+  .bigtime { font-size:min(46vw, 70vh); } .bigtime.long { font-size:min(36vw, 70vh); }
+  .pairplay .bigtime { font-size:min(44vw, 58vh); } .pairplay .bigtime.long { font-size:min(34vw, 58vh); }
+  .teamsline { display:flex; gap:4vw; justify-content:center; font-size:clamp(18px, 5vmin, 64px); font-weight:700; color:#cfd4da; margin-top:2vh; flex-wrap:wrap; }
+  .teamsline b { color:#fff; } .teamsline small { color:var(--dim); font-weight:600; margin-right:.4em; }
+  /* main projector */
+  .main-top { display:flex; align-items:baseline; gap:2vw; font-size:clamp(22px, 6vmin, 80px); font-weight:800; }
+  .main-top .sub { font-size:.42em; color:var(--dim); font-weight:600; }
+  .main .time { font-size:min(30vw, 44vh); margin:1vh 0; }
+  .main .time.long { font-size:min(24vw, 44vh); }
+  .tables { display:flex; gap:1.6vw; justify-content:center; flex-wrap:wrap; width:100%; }
+  .pairbox { display:flex; gap:.8vw; padding:.8vh .8vw; border-radius:1.4vmin; background:var(--card); border:2px solid #1f242b; }
+  .pairbox .pid { writing-mode:vertical-rl; transform:rotate(180deg); color:var(--dim); font-weight:800; letter-spacing:.15em; font-size:clamp(10px, 1.8vmin, 22px); text-align:center; }
+  .tchip { min-width:14vw; text-align:center; padding:.6vh 1vw; }
+  .tchip .tn { color:var(--dim); font-size:clamp(11px, 2.2vmin, 26px); font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .tchip .num { font-size:clamp(22px, 7.5vmin, 96px); font-weight:800; font-variant-numeric:tabular-nums; line-height:1.05; }
+  .tchip .nm { color:#aab0b8; font-size:clamp(10px, 2vmin, 22px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:22vw; }
+  .ondeck { margin-top:2vh; font-size:clamp(14px, 3.4vmin, 42px); color:#cfd4da; text-align:center; }
+  .ondeck b { color:var(--blue); text-transform:uppercase; letter-spacing:.1em; margin-right:.5em; }
+  .ondeck .t { color:#fff; font-weight:700; margin:0 .4em; white-space:nowrap; }
+  .ondeck .t small { color:var(--dim); font-weight:600; font-size:.8em; margin-right:.3em; }
+  /* pair: up next */
+  .upnext { text-align:center; width:100%; }
+  .upnext .kicker { color:var(--blue); font-weight:800; letter-spacing:.25em; text-transform:uppercase; font-size:clamp(18px, 5vmin, 64px); }
+  .upnext .mline { font-size:clamp(20px, 6vmin, 80px); font-weight:800; margin:.5vh 0 2vh; }
+  .upnext .mline span { color:var(--dim); font-weight:600; }
+  .upnext .cols { display:flex; justify-content:center; gap:4vw; }
+  .upnext .col { flex:1; max-width:46vw; background:var(--card); border-radius:2vmin; padding:2vh 1vw; border:2px solid #1f242b; }
+  .upnext .col .tn { color:var(--dim); font-weight:800; text-transform:uppercase; letter-spacing:.12em; font-size:clamp(14px, 4vmin, 48px); }
+  .upnext .col .num { font-size:min(12.5vw, 30vh); font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
+  .upnext .col .nm { color:#cfd4da; font-size:clamp(12px, 3.4vmin, 40px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .over { position:absolute; top:1vh; left:50%; transform:translateX(-50%); background:var(--end); color:#fff; font-weight:800; padding:.3em 1em; border-radius:999px; font-size:clamp(14px, 3.4vmin, 40px); letter-spacing:.08em; }
+  .fieldnote { margin-top:2vh; color:var(--dim); font-size:clamp(12px, 2.8vmin, 32px); font-variant-numeric:tabular-nums; }
+  /* overlays */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.9); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; z-index:10; padding:24px; overflow:auto; }
+  .overlay .big { font-size:clamp(24px, 6vmin, 52px); font-weight:800; }
+  .overlay .btn { background:var(--run); color:#000; font-weight:800; border-radius:999px; padding:.7em 1.6em; font-size:clamp(18px, 4vmin, 32px); cursor:pointer; border:0; }
+  .overlay .small { color:var(--dim); font-size:clamp(13px, 2.4vmin, 19px); max-width:34em; }
+  .overlay input { font-size:clamp(18px, 3.4vmin, 28px); padding:.4em .7em; border-radius:12px; border:1px solid #333; background:#111; color:#fff; text-align:center; width:min(80vw, 420px); }
+  .roles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; width:min(92vw, 760px); }
+  .roles a { display:block; background:#15181d; border:1px solid #2a2f37; border-radius:16px; padding:18px 12px; color:#fff; text-decoration:none; font-weight:800; font-size:clamp(17px, 3.2vmin, 26px); }
+  .roles a small { display:block; color:var(--dim); font-weight:600; font-size:.6em; margin-top:6px; }
+  .roles a.main { grid-column:1/-1; background:#123524; border-color:#1f6b45; }
+  .hidden { display:none !important; }
+  .muted { color:var(--dim); }
+  /* field break: orange + white, never the match green/amber/red */
+  :root { --brk:#ff9a2e; }
+  .time.break { color:var(--brk); }
+  .brkpill { display:inline-block; background:var(--brk); color:#1c0e00; font-weight:900; letter-spacing:.18em; text-transform:uppercase; padding:.18em .9em; border-radius:999px; font-size:clamp(18px, 4.6vmin, 58px); }
+  .brksub { color:#fff; font-weight:700; font-size:clamp(18px, 4.4vmin, 54px); margin-top:.4vh; }
+  .brksub span { color:var(--dim); font-weight:600; font-size:.7em; }
+  .breaknote { margin-top:2.6vh; display:inline-flex; gap:.6em; align-items:center; color:#fff; background:rgba(255,154,46,.13); border:2px solid rgba(255,154,46,.65); padding:.3em 1em; border-radius:999px; font-size:clamp(15px, 3.6vmin, 44px); font-weight:700; font-variant-numeric:tabular-nums; }
+  .breaknote b { color:var(--brk); letter-spacing:.12em; }
+  .main .time.break { font-size:min(26vw, 38vh); }
+  /* projector break: size cards and digits by how many tables are up so 4 teams fit side by side */
+  .mainbreak .cols { gap:1.6vw; width:100%; }
+  .mainbreak .col { min-width:0; max-width:none; padding:1.6vh .6vw; }
+  .mainbreak .col .num { font-size:min(calc(88vw / var(--n, 2) / 3.5), 26vh); white-space:nowrap; }
+  .mainbreak .col .tn { font-size:clamp(12px, min(4vmin, calc(10vw / var(--n, 2))), 48px); }
+  .mainbreak .breaknote { font-size:clamp(18px, 4.6vmin, 58px); margin-top:3vh; }
+  .breaknote .cd { color:var(--brk); }
+  .soon { color:var(--run); font-weight:900; letter-spacing:.25em; text-transform:uppercase; font-size:clamp(20px, 6vmin, 76px); margin-bottom:.4vh; }
+  .readytag { display:inline-block; margin-top:1.6vh; color:var(--run); font-weight:800; letter-spacing:.2em; text-transform:uppercase; font-size:clamp(14px, 3.4vmin, 40px); }
+  /* table referee READY marks: pre-match only */
+  .rtag { display:inline-block; background:var(--run); color:#03210f; font-weight:900; letter-spacing:.12em; text-transform:uppercase; border-radius:999px; padding:.12em .7em; font-size:clamp(11px, 2.2vmin, 28px); vertical-align:middle; margin-left:.5em; line-height:1.3; }
+  .tchip .rtag, .col .rtag { margin-left:0; margin-top:.4vh; }
+  .teamsline .rtag { font-size:.5em; }
+  .upnext-title { font-size:clamp(18px, 4.4vmin, 56px); font-weight:800; margin:1.6vh 0 1vh; }
+  .upnext-title b { color:var(--blue); letter-spacing:.12em; text-transform:uppercase; font-size:.7em; margin-right:.5em; }
+  .upnext-title span { color:var(--dim); font-weight:600; font-size:.7em; }
+  /* queuing screen */
+  .queue { width:100%; height:100%; display:flex; flex-direction:column; gap:1.4vh; padding:.6vh 0 1vh; }
+  .qbox { background:var(--card); border:2px solid #1f242b; border-radius:1.4vmin; padding:.7vh 1.4vw; }
+  .qnow { display:flex; align-items:center; gap:1.2vw; flex-wrap:wrap; font-size:clamp(14px, 2.9vmin, 36px); }
+  .qnow .k { font-weight:900; letter-spacing:.14em; color:var(--run); text-transform:uppercase; }
+  .qnow .k.brk, .qnow .clock.brk { color:var(--brk); } .qnow .k.dim { color:var(--dim); }
+  .qnow .t { white-space:nowrap; font-weight:700; } .qnow .t small { color:var(--dim); font-weight:600; margin-right:.25em; }
+  .qnow .clock { margin-left:auto; font-weight:900; font-variant-numeric:tabular-nums; font-size:1.35em; }
+  .qnext { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:1.4vw; min-height:0; }
+  .qcard { background:var(--card); border:3px solid #1f242b; border-radius:1.8vmin; padding:1.2vh 1.4vw; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+  .qcard.first { border-color:var(--blue); box-shadow:0 0 0 2px rgba(76,141,255,.15) inset; }
+  .qhead { display:flex; align-items:baseline; gap:.8vw; font-size:clamp(20px, 5.4vmin, 68px); font-weight:800; white-space:nowrap; }
+  .qhead .k { font-size:.42em; letter-spacing:.2em; color:var(--blue); text-transform:uppercase; font-weight:900; }
+  .qcard:not(.first) .qhead .k { color:var(--dim); }
+  .qhead .tm { margin-left:auto; color:#cfd4da; font-size:.62em; font-weight:700; }
+  .qhead .pr { color:var(--dim); font-size:.42em; font-weight:700; letter-spacing:.1em; }
+  .qrows { flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
+  .qrow { display:flex; align-items:baseline; gap:1.2vw; font-size:clamp(14px, 3vmin, 38px); border-top:1px solid #1f242b; padding:.4vh 0; }
+  .qrow:first-child { border-top:0; }
+  .qrow .qt { color:var(--dim); font-weight:800; text-transform:uppercase; letter-spacing:.06em; min-width:5.6em; }
+  .qrow .qn { font-size:2.3em; font-weight:900; font-variant-numeric:tabular-nums; min-width:3.1em; line-height:1; }
+  .qrow .qname { color:#cfd4da; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .qqueue { font-size:clamp(13px, 2.5vmin, 30px); }
+  .qqueue .k { color:var(--warn); font-weight:900; letter-spacing:.14em; text-transform:uppercase; margin-right:.6em; }
+  .qqueue .ln { display:flex; gap:1em; flex-wrap:wrap; align-items:baseline; padding:.25vh 0; }
+  .qqueue .ln b { min-width:7.5em; } .qqueue .ln .tm2 { color:var(--dim); min-width:5em; }
+  .qqueue .t { white-space:nowrap; } .qqueue .t small { color:var(--dim); margin-right:.25em; } .qqueue .t i { color:#aab0b8; font-style:normal; font-size:.85em; margin-left:.3em; }
+  /* nature theme (season: biodiversity) - subtle, behind everything */
+  #deco { position:fixed; inset:0; pointer-events:none; z-index:0; display:none; }
+  body.nature #deco { display:block; }
+  body.nature { background:radial-gradient(ellipse 90% 60% at 50% 115%, #0c2a18 0%, #05140c 45%, #000 85%); }
+  body.nature header, body.nature main, body.nature footer { position:relative; z-index:1; }
+  body.nature { --card:rgba(14,24,19,.92); }
+  body.nature .pairbox, body.nature .upnext .col, body.nature .qcard, body.nature .qbox { border-color:#1d3326; }
+  #deco svg { position:absolute; width:min(26vw, 34vh); height:auto; opacity:.17; }
+  #deco .tl { top:-2vh; left:-2vw; } #deco .br { bottom:-2vh; right:-2vw; transform:rotate(180deg); }
+</style>
+</head>
+<body class="nature">
+<div id="deco"><svg viewBox="0 0 200 200" class="tl" aria-hidden="true"><g fill="#3ddc84"><path d="M10 10 C70 20 120 60 190 150" stroke="#3ddc84" stroke-width="3" fill="none"/><path d="M40 22 C50 -2 85 -4 92 8 C80 24 58 30 40 22Z"/><path d="M44 26 C20 40 22 72 34 78 C46 62 50 44 44 26Z"/><path d="M90 48 C104 22 140 22 146 34 C132 52 110 56 90 48Z"/><path d="M94 54 C70 70 74 102 86 108 C98 90 102 72 94 54Z"/><path d="M138 92 C156 70 188 74 192 88 C176 104 156 104 138 92Z"/><path d="M140 98 C120 118 128 148 140 152 C150 134 150 116 140 98Z"/></g></svg><svg viewBox="0 0 200 200" class="br" aria-hidden="true"><g fill="#3ddc84"><path d="M10 10 C70 20 120 60 190 150" stroke="#3ddc84" stroke-width="3" fill="none"/><path d="M40 22 C50 -2 85 -4 92 8 C80 24 58 30 40 22Z"/><path d="M44 26 C20 40 22 72 34 78 C46 62 50 44 44 26Z"/><path d="M90 48 C104 22 140 22 146 34 C132 52 110 56 90 48Z"/><path d="M94 54 C70 70 74 102 86 108 C98 90 102 72 94 54Z"/><path d="M138 92 C156 70 188 74 192 88 C176 104 156 104 138 92Z"/><path d="M140 98 C120 118 128 148 140 152 C150 134 150 116 140 98Z"/></g></svg></div>
+<header>
+  <span class="dot" id="dot"></span>
+  <span id="name">Display</span>
+  <span id="delta" class="pill hidden"></span>
+  <span id="label"></span>
+</header>
+<main id="main"></main>
+<footer><span id="conn">connecting…</span><span id="sync"></span><span id="audioState"></span></footer>
+
+<div id="picker" class="overlay hidden">
+  <div class="big">Choose this screen's job</div>
+  <div class="roles" id="roles"></div>
+  <div class="small">Bookmark the page after choosing; the role is kept in the URL. You can also open <b>/display?role=main</b> or <b>/display?pair=A</b> directly.</div>
+</div>
+<div id="tap" class="overlay hidden">
+  <div class="big" id="tapTitle">FLL Match Timer</div>
+  <input id="nameInput" placeholder="Station name (optional)" maxlength="40">
+  <button class="btn" id="go">Tap to enable sound &amp; start</button>
+  <div class="small">Sound and keep-awake need one tap on phones and tablets. For all-day use, also set Auto-Lock / Screen timeout to <b>Never</b> and keep the device plugged in. <a href="/display" style="color:#4c8dff">Change role</a></div>
+</div>
+
+<script src="/sync.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const qs = new URLSearchParams(location.search);
+  const pairId = (qs.get('pair') || '').toUpperCase();
+  const qrole = (qs.get('role') || '').toLowerCase();
+  const role = pairId ? 'pair' : ['main', 'timer', 'queue'].includes(qrole) ? qrole : '';
+  const defaultName = role === 'main' ? 'Projector' : role === 'pair' ? 'Pair ' + pairId : role === 'queue' ? 'Queue' : 'Display';
+  let name = qs.get('name') || localStorage.getItem('fll.name.' + (role === 'pair' ? 'pair' + pairId : role)) || defaultName;
+  $('name').textContent = name; $('nameInput').value = name;
+
+  FLL.connect({ role: 'display', view: role === 'pair' ? 'pair ' + pairId : role || 'picker', name });
+
+  // ----- role picker -----
+  function showPicker() {
+    const pairs = (FLL.config && FLL.config.layout.pairs) || [{ id: 'A', tables: ['1', '2'] }, { id: 'B', tables: ['3', '4'] }, { id: 'C', tables: ['5', '6'] }];
+    $('roles').innerHTML = `<a class="main" href="/display?role=main">📽️ Main / projector<small>Always shows the timer, match, teams, schedule status</small></a>` +
+      pairs.map(p => `<a href="/display?pair=${encodeURIComponent(p.id)}">Pair ${esc(p.id)}<small>Tables ${esc(p.tables.join(' & '))}</small></a>`).join('') +
+      `<a href="/display?role=queue">📋 Queuing<small>Next two matches, now playing, who to queue</small></a>` +
+      `<a href="/display?role=timer">⏱️ Timer only<small>Plain countdown</small></a>`;
+    $('picker').classList.remove('hidden');
+  }
+  if (!role) { showPicker(); FLL.on('config', () => { if (!role) showPicker(); }); }
+  else $('tap').classList.remove('hidden');
+  $('tapTitle').textContent = role === 'main' ? 'Main projector' : role === 'queue' ? 'Queuing screen' : role === 'pair' ? 'Pair ' + pairId + ' screen' : 'Match timer';
+
+  function begin() {
+    name = $('nameInput').value.trim() || defaultName;
+    localStorage.setItem('fll.name.' + (role === 'pair' ? 'pair' + pairId : role), name);
+    $('name').textContent = name; FLL.name = name;
+    FLLSound.unlock(); FLLSound.whenEnabled(() => FLLSound.play('test', true));   // resume() is async on Safari
+    FLL.keepAwake().then(updateFooter);
+    $('tap').classList.add('hidden');
+    try { if (qs.get('fs') !== '0' && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); } catch (e) {}
+    FLL.hello(); updateFooter();
+  }
+  $('go').addEventListener('click', begin);
+  $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') begin(); });
+  $('name').addEventListener('click', () => { if (role) $('tap').classList.remove('hidden'); });
+  if (role && qs.get('autostart') === '1') begin();
+
+  function updateFooter() {
+    const put = (id, k, v) => { const el = $(id); if (el[k] !== v) el[k] = v; };   // write only on change
+    put('dot', 'className', 'dot ' + (FLL.connected ? (FLL.synced ? 'ok' : 'wait') : ''));
+    put('conn', 'textContent', FLL.connected ? (FLL.synced ? 'connected' : 'syncing…') : 'reconnecting…');
+    put('sync', 'textContent', FLL.rtt != null ? `latency ${Math.round(FLL.rtt / 2)} ms` : '');
+    const p = FLLSound.pref || {};
+    put('audioState', 'textContent', (p.muted ? '🔇 muted by head ref' : FLLSound.enabled() ? `🔊 sound on${p.vol != null && p.vol !== 1 ? ' (' + Math.round(p.vol * 100) + '%)' : ''}` : '🔇 sound off') + (FLL.wake ? ' · awake: ' + FLL.wake : ''));
+  }
+  FLL.on('status', updateFooter); FLL.on('sync', updateFooter); FLL.on('config', updateFooter); FLL.on('wake', updateFooter); FLL.on('audio', updateFooter);
+  FLL.on('config', c => document.body.classList.toggle('nature', !c.display || c.display.theme !== 'plain'));
+  setInterval(updateFooter, 1000);
+
+  // ----- cues: pair screens only sound for their own matches -----
+  let lastLive = null;
+  FLL.on('state', ({ state }) => { if (state.match && state.match.live != null) lastLive = state.match.live; });
+  function involved() {
+    if (role === 'queue') return false;   // queuing area: no match sounds (test chimes still play)
+    if (role !== 'pair' || !FLL.schedule || !FLL.schedule.matches.length) return true;
+    const st = FLL.state; const idx = st && st.match && st.match.live != null ? st.match.live : lastLive;
+    if (idx == null) return false;
+    return FLL.pairsOf(FLL.schedule.matches[idx]).includes(pairId);
+  }
+  window.__cues = [];
+  // A referee called the Head Ref: the projector plays a soft chime (audio only, nothing on screen). One-shot per call id,
+  // only if fresh (live), so a reconnect or a late join never replays it. Pair screens and the queue screen stay silent.
+  const chimed = new Set(); window.__chimes = [];
+  FLL.on('chime', m => {
+    if (role !== 'main' || chimed.has(m.id)) return; chimed.add(m.id);
+    if (m.at && FLL.serverNow() - m.at > 10000) return;
+    window.__chimes.push(m.id); FLLSound.play('callSoft');
+  });
+  const cue = FLL.cueWatcher(n => {
+    if (!involved()) return;
+    window.__cues.push({ name: n, at: FLL.perfNow() });
+    FLLSound.play(n);
+    if (n === 'end') { document.body.classList.remove('flash-end'); void document.body.offsetWidth; document.body.classList.add('flash-end'); }
+  });
+
+  // ----- views -----
+  function timerClass(st, r) {
+    if (st.kind === 'break') return 'break';
+    let cls = st.status;
+    if (st.status === 'running' && r <= 30000) cls = 'warn';
+    if (st.status === 'running' && r <= 0) cls = 'done';
+    return cls;
+  }
+  function bannerText(st, r) {
+    if (st.kind === 'break') return 'Until ' + FLL.clock(st.breakUntil);
+    return st.status === 'paused' ? 'Paused' : (st.status === 'done' || (st.status === 'running' && r <= 0)) ? 'Time!' :
+      (st.status === 'running' && FLL.serverNow() < st.startAt) ? 'Get ready' : st.status === 'idle' ? 'Ready' : '';
+  }
+  const tablesOf = m => Object.keys(m.teams).sort((a, b) => a - b);
+  // "Ready" tag for a table whose referee tapped READY (rIdx = the match's index, or null when tags must not show).
+  const rtag = (rIdx, t) => rIdx != null && FLL.isReady(rIdx, t) ? '<span class="rtag" data-ready="' + esc(t) + '">✓ Ready</span>' : '';
+  function teamChip(t, num, rIdx) {
+    return `<div class="tchip"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(num)}</div><div class="nm">${esc(FLL.teamName(num))}</div>${rtag(rIdx, t)}</div>`;
+  }
+  function tablesGrouped(m, rIdx) {
+    const pairs = FLL.config ? FLL.config.layout.pairs : [];
+    const used = new Set(); let html = '';
+    for (const p of pairs) {
+      const ts = p.tables.filter(t => m.teams[t]); if (!ts.length) continue;
+      ts.forEach(t => used.add(t));
+      html += `<div class="pairbox"><div class="pid">PAIR ${esc(p.id)}</div>${ts.map(t => teamChip(t, m.teams[t], rIdx)).join('')}</div>`;
+    }
+    const rest = tablesOf(m).filter(t => !used.has(t));
+    if (rest.length) html += `<div class="pairbox">${rest.map(t => teamChip(t, m.teams[t], rIdx)).join('')}</div>`;
+    return `<div class="tables">${html}</div>`;
+  }
+  function inlineTeams(m, onlyTables) {
+    return tablesOf(m).filter(t => !onlyTables || onlyTables.includes(t)).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small>${esc(m.teams[t])}</span>`).join(' ');
+  }
+
+  function queueView(st, info, text, brk) {
+    const L = info.list, up = info.upIdx;
+    const qn = FLL.config && FLL.config.display && FLL.config.display.queueCount != null ? FLL.config.display.queueCount : 2;
+    const teamsInline = m => tablesOf(m).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small> ${esc(m.teams[t])}</span>`).join(' ');
+    let now;
+    if (info.liveIdx != null) { const m = L[info.liveIdx]; now = `<span class="k">Now playing</span><b>${esc(FLL.matchLabel(m))}</b> ${teamsInline(m)}<span class="clock">${text}</span>`; }
+    else if (brk) now = `<span class="k brk">Field break</span><span>next match at <b>${esc(FLL.clock(st.breakUntil))}</b></span><span class="clock brk">${text}</span>`;
+    else if (info.doneIdx != null) now = `<span class="k dim">Finished</span><b>${esc(FLL.matchLabel(L[info.doneIdx]))}</b> ${teamsInline(L[info.doneIdx])}`;
+    else now = `<span class="k dim">Field ready</span><span class="muted">waiting for the Head Referee to start</span>`;
+    const card = (m, i) => m ? `<div class="qcard${i === 0 ? ' first' : ''}">
+        <div class="qhead"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span>${esc(FLL.matchLabel(m))}</span><span class="pr">${esc(FLL.pairsOf(m).map(p => 'PAIR ' + p).join(' + '))}</span><span class="tm">${esc(FLL.clock(m.time))}</span></div>
+        <div class="qrows">${tablesOf(m).map(t => `<div class="qrow"><span class="qt">${esc(FLL.tableName(t))}</span><span class="qn">${esc(m.teams[t])}</span><span class="qname">${esc(FLL.teamName(m.teams[t]))}</span></div>`).join('')}</div>
+      </div>` : `<div class="qcard"><div class="qhead"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="muted">No more matches</span></div></div>`;
+    const qd = []; for (let i = up + 2; i < Math.min(L.length, up + 2 + qn); i++) qd.push(L[i]);
+    const queued = qn > 0 ? `<div class="qbox qqueue"><div><span class="k">Should be queued</span>${qd.length ? '' : '<span class="muted">nothing else scheduled</span>'}</div>
+        ${qd.map(m => `<div class="ln"><b>${esc(FLL.matchLabel(m))}</b><span class="tm2">${esc(FLL.clock(m.time))}</span>${tablesOf(m).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small> ${esc(m.teams[t])}${FLL.teamName(m.teams[t]) ? ` <i>${esc(FLL.teamName(m.teams[t]))}</i>` : ''}</span>`).join(' ')}</div>`).join('')}</div>` : '';
+    return `<div class="queue"><div class="qbox qnow">${now}</div><div class="qnext">${card(L[up], 0)}${card(L[up + 1], 1)}</div>${queued}</div>`;
+  }
+
+  let lastHTML = '', lastText = '';
+  window.__transitions = []; window.__view = '';
+  function setMain(html, view) { if (html !== lastHTML) { $('main').innerHTML = html; lastHTML = html; } window.__view = view; }
+
+  function render() {
+    cue();
+    const st = FLL.state;
+    if (st && (st.status !== 'running' || FLL.samples.length)) {   // never show a running time before the clock is synced
+      const r = FLL.remaining();
+      const text = FLL.fmt(r);
+      if (text !== lastText) { window.__transitions.push({ text, at: FLL.perfNow(), status: st.status }); lastText = text; }
+      const cls = timerClass(st, r) + (text.length > 4 ? ' long' : '');
+      const info = FLL.matchInfo();
+      const pair = role === 'pair' ? FLL.pairById(pairId) : null;
+      // header extras
+      const dt = info && role !== 'timer' ? FLL.deltaText(info.delta) : { text: '' };
+      $('delta').textContent = dt.text; $('delta').className = 'pill ' + (dt.cls || '') + (dt.text ? '' : ' hidden');
+
+      const brk = FLL.isBreak();
+      const breakNote = () => `<div class="breaknote"><b>FIELD BREAK</b> ${text} · next match at ${esc(FLL.clock(st.breakUntil))}</div>`;
+      if (role === 'queue' && info) {
+        $('label').textContent = 'Queuing';
+        setMain(queueView(st, info, text, brk), 'queue');
+      } else if (role === 'main' && info && info.focus && brk) {
+        const nx = info.list[info.upIdx];
+        $('label').textContent = 'Field break';
+        // Like the pair screens: the next match's teams are the focus; the orange break countdown is context underneath.
+        const note = `<div class="breaknote"><b>Field break</b> · next match in <span class="cd">${text}</span>${nx && nx.time != null ? ` · scheduled ${esc(FLL.clock(nx.time))}` : ''}</div>`;
+        setMain(nx ? `<div class="upnext mainbreak">
+            <div class="kicker">Up next</div>
+            <div class="mline">${esc(FLL.matchLabel(nx))} <span>· ${esc(FLL.pairsOf(nx).map(p => 'Pair ' + p).join(' + '))}</span></div>
+            <div class="cols" style="--n:${Math.max(1, tablesOf(nx).length)}">${tablesOf(nx).map(t => `<div class="col"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(nx.teams[t])}</div><div class="nm">${esc(FLL.teamName(nx.teams[t]))}</div>${rtag(info.upIdx, t)}</div>`).join('')}</div>
+            ${note}
+          </div>` : `<div class="main" style="display:flex;flex-direction:column;align-items:center;width:100%"><div class="brkpill">Field break</div><div class="time ${cls}" id="time">${text}</div></div>`, 'main-break');
+      } else if (role === 'main' && info && info.focus) {
+        const f = info.focus, nx = info.next;
+        const actual = st.match.actualStarts && st.match.actualStarts[f.n];
+        const sub = `Scheduled ${FLL.clock(f.time)}${actual && info.doneIdx == null ? ' · started ' + FLL.clock(actual) : ''}`;
+        // Right after a field break: pre-match layout, no break context, just the teams and "Starting soon".
+        const soon = st.ready && st.status === 'idle' && st.kind !== 'break' && info.liveIdx == null && info.doneIdx == null;
+        $('label').textContent = info.doneIdx != null ? 'Match complete' : info.liveIdx != null ? 'Now playing' : soon ? 'Starting soon' : 'Up next';
+        setMain(`<div class="main${soon ? ' prematch' : ''}" style="display:flex;flex-direction:column;align-items:center;width:100%">
+            ${soon ? '<div class="soon">Starting soon</div>' : ''}
+            <div class="main-top"><span>${esc(FLL.matchLabel(f))}</span><span class="sub">${esc(sub)}</span></div>
+            <div class="time ${cls}" id="time">${text}</div>
+            ${tablesGrouped(f, info.liveIdx == null && info.doneIdx == null && st.status !== 'running' ? info.focusIdx : null)}
+            <div class="ondeck">${nx ? `<b>On deck</b>${esc(FLL.matchLabel(nx))} · ${esc(FLL.clock(nx.time))} ${inlineTeams(nx)}` : '<b>Last match</b>'}</div>
+          </div>`, soon ? 'main-prematch' : 'main');
+      } else if (role === 'pair' && pair && info) {
+        const liveM = info.liveIdx != null ? info.list[info.liveIdx] : null;
+        const playing = liveM && FLL.pairsOf(liveM).includes(pair.id);
+        // After a field break ends, the pairs playing the next match go into match-ready position (full timer + teams).
+        const readyM = !liveM && st.ready && st.status === 'idle' && st.kind !== 'break' ? info.list[info.currentIdx] : null;
+        if (readyM && FLL.pairsOf(readyM).includes(pair.id)) {
+          $('label').textContent = FLL.matchLabel(readyM);
+          setMain(`<div class="pairplay" style="text-align:center">
+              <div class="time bigtime ${cls}" id="time">${text}</div>
+              <div class="teamsline">${pair.tables.filter(t => readyM.teams[t]).map(t => `<span><small>${esc(FLL.tableName(t))}</small><b>${esc(readyM.teams[t])}</b>${rtag(info.currentIdx, t)}</span>`).join('')}</div>
+              <div class="readytag">Starting soon · ${esc(FLL.matchLabel(readyM))}</div>
+            </div>`, 'pair-ready');
+        } else if (playing) {
+          $('label').textContent = FLL.matchLabel(liveM);
+          setMain(`<div class="pairplay" style="text-align:center">
+              <div class="time bigtime ${cls}" id="time">${text}</div>
+              <div class="teamsline">${pair.tables.filter(t => liveM.teams[t]).map(t => `<span><small>${esc(FLL.tableName(t))}</small><b>${esc(liveM.teams[t])}</b></span>`).join('')}</div>
+            </div>`, 'pair-playing');
+        } else {
+          const from = info.liveIdx != null ? info.liveIdx + 1 : info.currentIdx;
+          let up = FLL.nextForPair(pair.id, from);
+          // if the match that just ended was ours and auto-advance is off, look past it
+          if (up && info.doneIdx != null && up.i === info.doneIdx) up = FLL.nextForPair(pair.id, info.doneIdx + 1);
+          const justEnded = info.doneIdx != null && FLL.pairsOf(info.list[info.doneIdx]).includes(pair.id) && st.match.endedAt && FLL.serverNow() - st.match.endedAt < 10000;
+          const field = brk ? breakNote() : liveM ? `Field: ${esc(FLL.matchLabel(liveM))} in progress · ${text}` : '';
+          $('label').textContent = up ? 'Up next' : '';
+          if (up) {
+            const m = up.m;
+            setMain(`${justEnded ? `<div class="over">${esc(FLL.matchLabel(info.list[info.doneIdx]))} over</div>` : ''}
+              <div class="upnext">
+                <div class="kicker">Up next</div>
+                <div class="mline">${esc(FLL.matchLabel(m))} <span>· ${esc(FLL.clock(m.time))}</span></div>
+                <div class="cols">${pair.tables.map(t => `<div class="col"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(m.teams[t] || '—')}</div><div class="nm">${esc(m.teams[t] ? FLL.teamName(m.teams[t]) : 'no team')}</div>${m.teams[t] ? rtag(up.i, t) : ''}</div>`).join('')}</div>
+                ${brk ? field : `<div class="fieldnote">${field}</div>`}
+              </div>`, brk ? 'pair-upnext-break' : 'pair-upnext');
+          } else {
+            setMain(`<div class="upnext"><div class="kicker">Pair ${esc(pair.id)}</div><div class="mline">No more matches scheduled</div><div class="fieldnote">${field}</div></div>`, 'pair-done');
+          }
+        }
+      } else {
+        // plain timer (also main/pair before a schedule exists)
+        $('label').textContent = info && info.focus ? FLL.matchLabel(info.focus) : (st.label || '');
+        setMain(`${brk ? '<div class="brkpill">Field break</div>' : ''}<div class="time bigtime ${cls}" id="time">${text}</div><div class="banner">${bannerText(st, r)}</div>`, brk ? 'timer-break' : 'timer');
+      }
+    }
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+  setInterval(() => { if (document.hidden) cue(); }, 100);
+})();
+</script>
+</body>
+</html>

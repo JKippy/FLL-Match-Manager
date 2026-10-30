@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d10">
+<title>FLL Timer – Head Referee</title>
+<style>
+  :root { --bg:#0b0d10; --card:#15181d; --line:#262a31; --fg:#e9edf2; --dim:#8a8f98; --run:#3ddc84; --warn:#ffc400; --end:#ff3b30; --blue:#4c8dff; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding:max(12px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom)); font-size:15px; }
+  .wrap { max-width:1180px; margin:0 auto; display:grid; gap:14px; }
+  @media (min-width:900px) { .wrap { grid-template-columns: 1.05fr .95fr; } .full { grid-column:1/-1; } }
+  header { display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:18px; margin:0; }
+  header .sub { color:var(--dim); font-size:13px; margin-left:auto; display:flex; align-items:center; gap:6px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--end); display:inline-block; }
+  .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; min-width:0; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); margin:0 0 10px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .card h2 .r { margin-left:auto; text-transform:none; letter-spacing:0; }
+  #time { cursor:pointer; user-select:none; -webkit-user-select:none; font-size:clamp(72px, 22vw, 140px); font-weight:800; text-align:center; font-variant-numeric:tabular-nums; line-height:1; margin:4px 0 2px; }
+  #time.running { color:var(--run); } #time.warn { color:var(--warn); } #time.done { color:var(--end); } #time.paused { opacity:.6; } #time.break { color:var(--brk); }
+  :root { --brk:#ff9a2e; }
+  .brkbox { margin-top:12px; border:1px solid rgba(255,154,46,.45); background:rgba(255,154,46,.06); border-radius:12px; padding:10px; }
+  .brkbox h3 { margin:0 0 8px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--brk); }
+  .brkbox button.brk { background:var(--brk); color:#1c0e00; }
+  .brkbox .row { margin-top:8px; } .brkbox label { color:var(--dim); font-size:13.5px; display:inline-flex; align-items:center; gap:6px; }
+  .brkbox input[type=number] { width:68px; padding:6px 8px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg button { border-radius:0; background:#0f1216; padding:8px 14px; font-weight:700; }
+  .seg button.on { background:var(--blue); }
+  #status { text-align:center; color:var(--dim); text-transform:uppercase; letter-spacing:.15em; font-size:13px; margin-bottom:10px; }
+  .btns { display:grid; grid-template-columns: 2fr 1fr; gap:10px; }
+  button { font:inherit; border:0; border-radius:12px; padding:10px 14px; font-weight:700; cursor:pointer; color:#fff; background:#22262d; touch-action:manipulation; }
+  button:disabled { opacity:.35; cursor:default; }
+  button.pri { background:var(--blue); }
+  #startBtn { background:var(--run); color:#000; font-size:26px; padding:20px; font-weight:800; border-radius:14px; }
+  #startBtn.pause { background:var(--warn); }
+  #resetBtn { font-size:20px; font-weight:800; border-radius:14px; }
+  .presets { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .presets button.sel { outline:2px solid var(--blue); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  input, select, textarea { font:inherit; font-size:15px; padding:9px 11px; border-radius:10px; border:1px solid var(--line); background:#0f1216; color:#fff; min-width:0; }
+  input[type=range] { padding:0; accent-color:var(--blue); border:0; background:none; }
+  input[type=checkbox] { accent-color:var(--blue); width:18px; height:18px; }
+  textarea { width:100%; min-height:90px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; }
+  .grow { flex:1; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; color:var(--dim); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; padding:6px 4px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card); }
+  td { padding:6px 4px; border-bottom:1px solid #1d2026; font-variant-numeric:tabular-nums; vertical-align:middle; }
+  td.n { font-weight:700; } .muted { color:var(--dim); } .good { color:var(--run); } .bad { color:var(--end); } .meh { color:var(--warn); }
+  .hint { color:var(--dim); font-size:12.5px; margin-top:8px; }
+  .pill { padding:2px 10px; border-radius:999px; font-weight:800; font-size:13px; }
+  .pill.ok { background:rgba(61,220,132,.16); color:var(--run); } .pill.meh { background:rgba(255,196,0,.16); color:var(--warn); } .pill.bad { background:rgba(255,59,48,.18); color:var(--end); }
+  .matchbar { display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
+  .matchbar .mt { font-size:22px; font-weight:800; }
+  .teams { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 2px; }
+  .chip { background:#0f1216; border:1px solid var(--line); border-radius:10px; padding:4px 9px; font-size:14px; }
+  .chip small { color:var(--dim); margin-right:5px; } .chip b { font-variant-numeric:tabular-nums; }
+  .chip.pairtag { border-color:#2d4f8a; color:#9cc0ff; font-weight:800; }
+  .sched { max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px; }
+  .sched tr { cursor:pointer; } .sched tr.cur td { background:#14243d; } .sched tr.live td { background:#123524; } .sched tr.done td { color:#6c727b; }
+  .sched td.tm { white-space:nowrap; }
+  .vol { display:grid; grid-template-columns: 130px 1fr 52px auto; gap:8px 10px; align-items:center; }
+  .vol .lbl b { display:block; } .vol .lbl small { color:var(--dim); font-size:12px; }
+  .vol .pct { text-align:right; font-variant-numeric:tabular-nums; color:var(--dim); }
+  .vol .acts { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .vol .acts button { padding:7px 10px; font-size:13px; }
+  .file { font-size:12px; color:var(--run); max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .file.none { color:var(--dim); }
+  .pairs .prow { display:flex; gap:8px; margin-bottom:6px; } .pairs input.pid { width:70px; }
+  .share { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  #qr { background:#fff; padding:8px; border-radius:10px; line-height:0; }
+  #qr svg { width:150px; height:150px; }
+  .urls { font-size:14px; word-break:break-all; flex:1; min-width:220px; } .urls a { color:var(--blue); }
+  details summary { cursor:pointer; color:var(--blue); font-size:14px; margin-top:8px; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:#1f6b45; color:#fff; padding:10px 16px; border-radius:12px; font-weight:700; z-index:20; display:none; max-width:90vw; }
+  #toast.err { background:#8a1f1a; }
+  #confirmModal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; z-index:15; }
+  #confirmModal.hidden { display:none; }
+  #confirmModal .card { width:min(92vw, 440px); text-align:center; border:2px solid var(--warn, #f5c542); }
+  #confirmModal .q { font-size:22px; font-weight:800; margin:4px 0 8px; } #confirmModal .why { color:var(--dim); font-size:14px; margin-bottom:14px; }
+  #confirmModal .row { display:flex; gap:10px; } #confirmModal button { flex:1; padding:14px; font-size:17px; font-weight:800; }
+  #confirmYes { background:var(--run); color:#000; }
+  .brkbox details { margin-top:8px; color:var(--dim); font-size:13.5px; } .brkbox summary { cursor:pointer; }
+  #pinModal { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:9; }
+  #pinModal .card { width:min(92vw, 360px); text-align:center; }
+  #pinModal input { font-size:28px; text-align:center; width:100%; padding:12px; letter-spacing:.3em; margin:8px 0 12px; }
+  #pinModal button { width:100%; background:var(--run); color:#000; font-size:18px; padding:14px; }
+  #err { color:var(--end); min-height:1.2em; font-size:14px; }
+  .hidden { display:none !important; }
+  kbd { background:#22262d; border-radius:4px; padding:1px 5px; font-size:12px; }
+  .dispvol { width:90px; vertical-align:middle; }
+  /* table referees */
+  .chip.rdy { border-color:#1f6b45; background:rgba(61,220,132,.1); } .chip.rdy i { color:var(--run); }
+  .chip.wait i { color:var(--warn); } .chip i { font-style:normal; font-weight:800; margin-left:6px; font-size:12.5px; }
+  #callBanner { position:sticky; top:0; z-index:12; display:flex; flex-direction:column; gap:8px; }
+  #callBanner:empty { display:none; }
+  .callrow { display:flex; align-items:center; gap:12px; background:#ffb347; color:#1d1200; border-radius:14px; padding:12px 14px; font-size:20px; font-weight:800; box-shadow:0 6px 24px rgba(255,179,71,.25); animation:callin .3s ease-out; }
+  .callrow .w { font-size:13px; font-weight:700; opacity:.8; margin-left:4px; }
+  .callrow button { margin-left:auto; background:#1d1200; color:#ffd8a3; padding:10px 16px; font-size:16px; }
+  @keyframes callin { from { transform:translateY(-8px); opacity:0; } }
+  .refgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(118px, 1fr)); gap:10px; }
+  .refgrid .rc { background:#0f1216; border:1px solid var(--line); border-radius:12px; padding:8px; text-align:center; font-size:13px; }
+  .refgrid .rc .q { background:#fff; border-radius:8px; padding:6px; line-height:0; margin-bottom:6px; } .refgrid .rc .q svg { width:100%; height:auto; }
+  .refgrid .rc a { color:var(--blue); font-weight:800; text-decoration:none; font-size:14px; }
+  .refgrid .rc .st { display:block; color:var(--dim); font-size:12px; margin-top:2px; } .refgrid .rc .st.good { color:var(--run); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="callBanner" class="full" aria-live="assertive"></div>
+  <header class="full">
+    <h1>🏁 FLL Match Timer · Head Referee</h1>
+    <div class="sub"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
+  </header>
+
+  <section class="card">
+    <div id="matchPanel" class="hidden">
+      <div class="matchbar">
+        <button id="prevBtn" title="Previous match">◀</button>
+        <span class="mt" id="mTitle">Match 1</span>
+        <span class="muted" id="mSched"></span>
+        <span class="pill" id="mDelta"></span>
+        <span class="pill hidden" id="mReady" title="Table referees who tapped READY on their phone (/ref)"></span>
+        <button id="nextBtn" title="Next match" style="margin-left:auto">▶</button>
+      </div>
+      <div class="teams" id="mTeams"></div>
+      <div class="muted" style="font-size:13px" id="mOnDeck"></div>
+    </div>
+    <div id="time" title="Click to start / pause (same as the START button)">2:30</div>
+    <div id="status">ready</div>
+    <div class="btns">
+      <button id="startBtn">START</button>
+      <button id="resetBtn">RESET</button>
+    </div>
+    <div class="presets" id="presets">
+      <button data-ms="150000" data-label="Match">2:30 Match</button>
+      <button data-ms="120000" data-label="Setup">2:00</button>
+      <button data-ms="60000" data-label="Timer">1:00</button>
+      <button data-ms="300000" data-label="Timer">5:00</button>
+    </div>
+    <div class="row">
+      <input id="customTime" class="grow" inputmode="numeric" placeholder="Custom m:ss (e.g. 3:00)">
+      <button class="pri" id="setCustom">Set</button>
+    </div>
+    <div class="brkbox">
+      <h3>Field break (silent, orange timer)</h3>
+      <div class="row" style="margin-top:0">
+        <button class="brk" id="endSession" title="Leave 0:00 and start a break until the next match (or go straight to ready if behind)">End match session ▸</button>
+        <button id="breakNext">Break until next match</button>
+        <input id="breakLen" style="width:96px" placeholder="m:ss" inputmode="numeric"><button id="breakCustom">Break</button>
+        <button id="breakEndBtn" class="hidden">End break</button>
+      </div>
+      <div class="row">
+        <label>Target: start matches up to <input type="number" id="brkAhead" step="0.5" min="0" max="30"> min ahead of schedule</label>
+      </div>
+      <div class="hint" id="brkHint" style="margin-top:4px"></div>
+      <div class="row">
+        <label><input type="checkbox" id="brkAuto"> End match session automatically <input type="number" id="brkDelay" min="0" max="120" step="1"> s after 0:00</label>
+      </div>
+      <details><summary>Advanced</summary>
+        <div class="row"><label>Don't bother showing a break shorter than <input type="number" id="brkMin" step="5" min="0" max="1800"> s</label></div>
+        <div class="hint">If the break would be shorter than this, the screens skip it and go straight to the next match.</div>
+      </details>
+    </div>
+    <div class="hint"><kbd>Space</kbd> start / pause · <kbd>R</kbd> reset (abort plays the foghorn) · <kbd>←</kbd>/<kbd>→</kbd> previous / next match. Displays start together ~0.6 s after START.
+      <label style="display:inline-flex;gap:6px;align-items:center;margin-left:6px"><input type="checkbox" id="autoAdv" checked> auto-advance after each match</label></div>
+  </section>
+
+  <section class="card">
+    <h2>Connected displays <span class="r" id="count">0</span></h2>
+    <div style="overflow:auto">
+    <table>
+      <thead><tr><th>Station</th><th>Role</th><th>Latency</th><th>Volume</th><th></th></tr></thead>
+      <tbody id="clients"><tr><td colspan="5" class="muted">No displays yet</td></tr></tbody>
+    </table>
+    </div>
+    <div class="hint">Volume here overrides one screen (e.g. projector loud, table screens quiet). 🔇 mutes it. ▶ plays a test chime on just that screen.</div>
+  </section>
+
+  <section class="card full">
+    <h2>Match schedule <span class="r muted" id="schedInfo">No schedule loaded</span></h2>
+    <div class="row" style="margin-top:0">
+      <input id="nexusUrl" class="grow" placeholder="Nexus event link, e.g. https://fll.nexus/fll/mm26">
+      <button class="pri" id="nexusBtn">Fetch from Nexus</button>
+      <label style="display:inline-flex;gap:6px;align-items:center" title="Re-check Nexus every minute while no match is running"><input type="checkbox" id="nexusAuto"> auto-refresh</label>
+    </div>
+    <div class="hint" id="nexusStatus">Needs internet on this laptop. Offline? Upload or paste a CSV instead.</div>
+    <details id="csvBox">
+      <summary>Upload or paste a schedule (CSV)</summary>
+      <div class="row">
+        <input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv">
+        <label class="muted">Event date <input type="date" id="csvDate"></label>
+        <button class="pri" id="csvLoad">Load pasted text</button>
+        <a class="muted" href="/schedule-template.csv" download style="color:var(--blue)">template</a>
+      </div>
+      <textarea id="csvText" placeholder="Match,Time,Table 1,Table 2,Table 3,Table 4,Table 5,Table 6&#10;1,9:30 AM,77354,38663,54448,74194,,&#10;2,9:35 AM,,,,,72268,60861&#10;(or copy the Robot game table from the Nexus schedule page and paste it here)"></textarea>
+    </details>
+    <div class="row">
+      <label class="muted">Shift times: match <input id="shiftIdx" type="number" min="1" value="1" style="width:70px"> starts at <input id="shiftTime" type="time"></label>
+      <button id="shiftBtn">Apply</button>
+      <span class="grow"></span>
+      <a id="csvDl" href="/api/schedule.csv" style="color:var(--blue);font-size:14px">Download CSV</a>
+      <button id="clearActuals">Clear actual starts</button>
+      <button id="clearSched">Remove schedule</button>
+    </div>
+    <div class="sched" style="margin-top:10px"><table id="schedTable"><tbody><tr><td class="muted">Load a schedule to see matches here.</td></tr></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Sounds &amp; volume <span class="r"><span class="seg" id="packSeg"><button data-pack="nature">🌿 Nature</button><button data-pack="classic">Classic</button></span></span></h2>
+    <div class="vol" id="volGrid"></div>
+    <div class="hint"><b>Nature</b> (default): gentle marimba + birdsong start, wind chimes at 0:30, bell trio + ocean swell at 0:00, soft descending tones on abort. <b>Classic</b>: FIRST-style charge, whistle, buzzer, foghorn. Field breaks never make a sound.
+      FIRST doesn't publish its field sounds, so both packs are synthesized. Upload your own (mp3/wav/m4a/ogg, ≤ 8 MB) per cue; the files are stored on the laptop and sent to every screen. “Test” plays on all screens, “Here” only on this device.</div>
+  </section>
+
+  <section class="card full" id="refCard">
+    <h2>Table referees <span class="r muted" id="refInfo"></span></h2>
+    <div class="refgrid" id="refGrid"></div>
+    <div class="row"><label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refConfirm" checked> Ask before START if a table in the match isn't READY</label>
+      <button id="refClear" title="Clear every READY mark">Clear READY marks</button></div>
+    <div class="hint">Each table referee opens their table's link on a phone (scan the code), taps <b>READY</b> when the table and team are set, and can tap <b>Call Head Ref</b>. The ready check starts once a referee page has been opened. No PIN needed on the referee page; it can only mark its own table and call you.</div>
+  </section>
+
+  <section class="card">
+    <h2>Table pairs</h2>
+    <div class="pairs" id="pairsEd"></div>
+    <div class="row"><button id="addPair">+ Pair</button><button class="pri" id="savePairs">Save pairs</button></div>
+    <div class="hint">Which tables each pair screen covers. Matches are assigned to pairs from the tables in the schedule (A+B together, then C, etc. comes straight from the schedule).</div>
+    <h2 style="margin-top:16px">Screens</h2>
+    <div class="row" style="margin-top:0">
+      <label class="muted">Look <span class="seg" id="themeSeg"><button data-theme="nature">🌿 Nature</button><button data-theme="plain">Plain</button></span></label>
+      <label class="muted">Queuing screen: “should be queued” rows <input type="number" id="queueCount" min="0" max="8" style="width:64px"></label>
+    </div>
+    <h2 style="margin-top:16px">Add a screen</h2>
+    <div class="share">
+      <div id="qr"></div>
+      <div class="urls">
+        <select id="qrRole"></select>
+        <div id="urlList" style="margin:8px 0"></div>
+        <div class="hint">Scan or open on each screen, then tap once to enable sound.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="confirmModal" class="hidden">
+  <div class="card">
+    <div class="q" id="confirmMsg"></div>
+    <div class="why" id="confirmWhy"></div>
+    <div class="row"><button id="confirmNo">Cancel</button><button id="confirmYes">Start anyway</button></div>
+  </div>
+</div>
+<div id="pinModal" class="hidden">
+  <div class="card">
+    <h2>Head Referee PIN</h2>
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="off">
+    <div id="err"></div>
+    <button id="pinBtn">Unlock</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="/vendor/qrcode.js"></script>
+<script src="/sync.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  FLL.connect({ role: 'control', name: 'Head Ref', pin: localStorage.getItem('fll.pin') || '' });
+  // Any first tap on this page enables audio, so a referee's call can chime even before START was pressed.
+  document.addEventListener('pointerdown', () => FLLSound.unlock(), { once: true, passive: true });
+  function setText(el, t) { if (typeof el === 'string') el = $(el); if (el.textContent !== t) el.textContent = t; }
+  // Same rule for classes / disabled / checked: only touch the DOM when the value changes (per-frame writes swallow clicks in Safari).
+  function setCls(el, c) { if (typeof el === 'string') el = $(el); if (el.className !== c) el.className = c; }
+  function setDis(el, d) { if (typeof el === 'string') el = $(el); d = !!d; if (el.disabled !== d) el.disabled = d; }
+  function toast(t, err) { const el = $('toast'); el.textContent = t; el.className = err ? 'err' : ''; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = 'none', err ? 6000 : 3000); }
+  FLL.on('notice', t => toast(t)); FLL.on('error', e => { if (FLL.pinRequired && !FLL.authed) $('err').textContent = e; else toast(e, true); });
+
+  // ----- status / auth -----
+  function status() {
+    setCls('dot', 'dot ' + (FLL.connected ? (FLL.synced ? 'ok' : 'wait') : ''));
+    setText('conn', FLL.connected ? (FLL.authed ? 'connected' : 'locked') : 'reconnecting…');
+    $('pinModal').classList.toggle('hidden', !(FLL.connected && FLL.pinRequired && !FLL.authed));
+  }
+  FLL.on('status', status); FLL.on('sync', status);
+  FLL.on('auth', (ok, m) => { if (ok) localStorage.setItem('fll.pin', $('pinInput').value); else $('err').textContent = (m && m.error) || 'Wrong PIN'; });
+  $('pinBtn').onclick = () => { FLL.pin = $('pinInput').value; FLL.send({ t: 'auth', pin: FLL.pin }); };
+  $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('pinBtn').click(); });
+
+  // ----- timer controls -----
+  function startPause() { const st = FLL.state; if (!st) return; FLLSound.unlock(); FLL.cmd(st.status === 'running' && !FLL.isBreak() ? 'pause' : 'start'); }
+  function reset() {
+    const st = FLL.state; if (!st) return;
+    if (FLL.isBreak()) { FLL.cmd('breakEnd'); return; }
+    if ((st.status === 'running' || st.status === 'paused') && !confirm('Abort the match on ALL displays? (plays the foghorn; the match is not advanced)')) return;
+    FLL.cmd('reset');
+  }
+  $('startBtn').onclick = startPause; $('resetBtn').onclick = reset;
+  $('time').onclick = startPause;   // the big digits behave like the START/PAUSE button
+  // ----- "ahead of schedule" confirm (server refuses START more than the target ahead unless forced) -----
+  const confirmOpen = () => !$('confirmModal').classList.contains('hidden');
+  // Refused START: too far ahead of schedule and/or tables not READY. One prompt covers both; "Start anyway" forces.
+  FLL.on('ahead', r => {
+    const i = r.info || {}, nr = i.notReady || [], ahead = i.ahead !== false && (r.code === 'ahead' || i.ahead);
+    const tl = nr.length ? `Table${nr.length > 1 ? 's' : ''} ${nr.join(', ')} ${nr.length > 1 ? "aren't" : "isn't"} ready` : '';
+    const ml = `${i.practice ? 'Practice' : 'Match'} ${i.n}`;
+    $('confirmMsg').textContent = tl && ahead ? `${tl}, and you're ${i.text} ahead of schedule. Start anyway?` : tl ? `${tl}. Start anyway?` : `You're ${i.text || ''} ahead of schedule. Start anyway?`;
+    const why = [];
+    if (tl) why.push(`${nr.length > 1 ? 'Their referees haven\'t' : 'The referee hasn\'t'} tapped READY for ${ml}.`);
+    if (ahead) why.push(`${ml} is scheduled for ${FLL.clock(i.time)}. The target is to start no more than ${i.aheadMin} min early.`);
+    $('confirmWhy').textContent = why.join(' ');
+    $('confirmModal').classList.remove('hidden'); $('confirmNo').focus();
+  });
+  $('confirmNo').onclick = () => $('confirmModal').classList.add('hidden');
+  $('confirmYes').onclick = () => { $('confirmModal').classList.add('hidden'); FLLSound.unlock(); FLL.cmd('start', { force: true }); };
+  // NEXT / PREV carry the match this page was showing: if another press (or another ref) got there first, the server
+  // refuses this one with a toast instead of skipping a match.
+  const step = d => FLL.state && FLL.cmd('goto', { delta: d, from: FLL.state.match.current });
+  $('prevBtn').onclick = () => step(-1);
+  $('nextBtn').onclick = () => step(1);
+  // While our own change is waiting for its ack, the render loop must not put the old server value back (the click "flipped back").
+  let autoAdvPending = 0;
+  $('autoAdv').onchange = e => { const id = ++autoAdvPending; FLL.cmd('autoAdvance', { on: e.target.checked }).catch(() => {}).then(() => { if (autoAdvPending === id) { autoAdvPending = 0; render(); } }); };
+  document.addEventListener('keydown', e => {
+    const el = e.target, tag = el.tagName;
+    // Only text fields keep the keys; a focused checkbox/button/slider must not swallow Space (it used to toggle the checkbox instead of starting).
+    const typing = el.isContentEditable || /TEXTAREA|SELECT/.test(tag) || (tag === 'INPUT' && !/^(checkbox|radio|button|submit|range|file)$/i.test(el.type));
+    if (typing || confirmOpen() || !$('pinModal').classList.contains('hidden')) { if (e.key === 'Escape' && confirmOpen()) $('confirmNo').click(); return; }
+    if (tag === 'INPUT' && el.type === 'range' && /Arrow/.test(e.key)) return;   // arrows still adjust a focused volume slider
+    if (e.code === 'Space') { e.preventDefault(); startPause(); }
+    if (e.key === 'r' || e.key === 'R') reset();
+    if (e.key === 'ArrowLeft' && !e.repeat) step(-1);
+    if (e.key === 'ArrowRight' && !e.repeat) step(1);
+  });
+  function setDuration(ms, label) {
+    const st = FLL.state;
+    if (st && (st.status === 'running' || st.status === 'paused') && !confirm('Change time? This resets the current timer on all displays.')) return;
+    FLL.cmd('set', { duration: ms, label });
+  }
+  $('presets').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setDuration(+b.dataset.ms, b.dataset.label); });
+  $('setCustom').onclick = () => {
+    const v = $('customTime').value.trim(); let ms = NaN;
+    const m = v.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (m) ms = (+m[1] * 60 + +m[2]) * 1000; else if (/^\d+(\.\d+)?$/.test(v)) ms = Math.round(parseFloat(v) * 60000);
+    if (!(ms >= 1000)) { alert('Enter m:ss, e.g. 2:30 (or minutes, e.g. 3)'); return; }
+    setDuration(ms, 'Timer');
+  };
+
+  // ----- field break -----
+  const parseMs = v => { v = String(v).trim(); const m = v.match(/^(\d{1,3}):(\d{1,2})$/); if (m) return (+m[1] * 60 + +m[2]) * 1000; return /^\d+(\.\d+)?$/.test(v) ? Math.round(parseFloat(v) * 60000) : NaN; };
+  $('endSession').onclick = () => FLL.cmd('endSession');
+  $('breakNext').onclick = () => FLL.cmd('breakStart', { until: 'next' });
+  $('breakCustom').onclick = () => { const ms = parseMs($('breakLen').value); if (!(ms >= 5000)) return toast('Enter the break length as m:ss (e.g. 10:00) or minutes', true); FLL.cmd('breakStart', { duration: ms }); };
+  $('breakEndBtn').onclick = () => FLL.cmd('breakEnd');
+  $('brkAhead').onchange = e => FLL.cmd('breakConfig', { aheadMin: +e.target.value });
+  $('brkMin').onchange = e => FLL.cmd('breakConfig', { minBreakSec: +e.target.value });
+  $('brkDelay').onchange = e => FLL.cmd('breakConfig', { autoDelaySec: +e.target.value });
+  $('brkAuto').onchange = e => FLL.cmd('breakConfig', { auto: e.target.checked });
+  $('packSeg').onclick = e => { const b = e.target.closest('button'); if (b) FLL.cmd('soundPack', { pack: b.dataset.pack }); };
+  $('themeSeg').onclick = e => { const b = e.target.closest('button'); if (b) FLL.cmd('displayConfig', { theme: b.dataset.theme }); };
+  $('queueCount').onchange = e => FLL.cmd('displayConfig', { queueCount: +e.target.value });
+  function applyBreakCfg(c) {
+    const b = c.breaks || {}, a = document.activeElement;
+    if (a !== $('brkAhead')) $('brkAhead').value = b.aheadMin;
+    if (a !== $('brkMin')) $('brkMin').value = b.minBreakSec;
+    if (a !== $('brkDelay')) $('brkDelay').value = b.autoDelaySec;
+    $('brkAuto').checked = !!b.auto;
+    $('brkHint').textContent = `A field break ends ${b.aheadMin} min before the next match's scheduled time, and START asks to confirm if you're more than ${b.aheadMin} min ahead.`;
+    [...$('packSeg').children].forEach(x => x.classList.toggle('on', x.dataset.pack === (c.sound.pack || 'nature')));
+    const d = c.display || {};
+    [...$('themeSeg').children].forEach(x => x.classList.toggle('on', x.dataset.theme === (d.theme || 'nature')));
+    if (a !== $('queueCount')) $('queueCount').value = d.queueCount == null ? 2 : d.queueCount;
+    const subs = (c.sound.pack || 'nature') === 'classic' ? CUE_SUB.classic : CUE_SUB.nature;
+    for (const k in subs) { const el = document.querySelector(`#volGrid [data-sub="${k}"]`); if (el) el.textContent = subs[k] + (k === 'call' ? ' (this page only)' : ''); }
+  }
+
+  // ----- live preview + match panel -----
+  const cue = FLL.cueWatcher(n => FLLSound.play(n));
+  let lastSchedKey = '';
+  function render() {
+    cue();
+    const st = FLL.state;
+    if (st) {
+      const r = FLL.remaining();
+      setText('time', FLL.fmt(r));
+      const brk = FLL.isBreak();
+      let cls = st.status; if (st.status === 'running' && r <= 30000) cls = 'warn'; if (r <= 0 && st.status !== 'idle') cls = 'done';
+      if (brk) cls = 'break';
+      setCls('time', cls);
+      const pre = st.status === 'running' && FLL.serverNow() < st.startAt;
+      setText('status', brk ? 'field break · until ' + FLL.clock(st.breakUntil) : pre ? 'starting…' : ({ idle: 'ready', running: 'running', paused: 'paused', done: 'time!' })[st.status] + ' · ' + (st.label || ''));
+      const b = $('startBtn');
+      const bt = brk ? 'START MATCH' : st.status === 'running' ? 'PAUSE' : st.status === 'paused' ? 'RESUME' : 'START';
+      if (b.textContent !== bt) b.textContent = bt; // only touch the DOM on change: rewriting every frame swallows clicks in Safari
+      b.classList.toggle('pause', st.status === 'running' && !brk);
+      const rt = brk ? 'END BREAK' : 'RESET'; if ($('resetBtn').textContent !== rt) $('resetBtn').textContent = rt;
+      const matchOn = !brk && (st.status === 'running' || st.status === 'paused');
+      setDis('endSession', matchOn || brk); setDis('breakNext', matchOn || !FLL.schedule); setDis('breakCustom', matchOn);
+      $('breakEndBtn').classList.toggle('hidden', !brk);
+      [...$('presets').children].forEach(x => x.classList.toggle('sel', +x.dataset.ms === st.duration));
+      const info = FLL.matchInfo();
+      $('matchPanel').classList.toggle('hidden', !info);
+      if (info && info.focus) {
+        const f = info.focus, busy = !brk && (st.status === 'running' || st.status === 'paused');
+        setText('mTitle', FLL.matchLabel(f) + ' of ' + info.list.length + (info.doneIdx != null ? ' · done' : ''));
+        const act = st.match.actualStarts && st.match.actualStarts[f.n];
+        setText('mSched', 'sched ' + FLL.clock(f.time) + (act ? ' · started ' + FLL.clock(act) : ''));
+        const dt = FLL.deltaText(info.delta); setText('mDelta', dt.text); setCls('mDelta', 'pill ' + dt.cls + (dt.text ? '' : ' hidden'));
+        // Table-referee READY marks for the match START would begin (hidden while it runs / after it ends).
+        const refsOn = st.refs && st.refs.used, upI = busy ? null : FLL.upcomingIdx(), preIdx = upI === info.focusIdx ? upI : null;
+        const tabs = Object.keys(f.teams).sort((a, b) => a - b);
+        const rdyOf = t => refsOn && preIdx != null ? (FLL.isReady(preIdx, t) ? 'rdy' : 'wait') : '';
+        const teamsHTML = FLL.pairsOf(f).map(p => `<span class="chip pairtag">${esc(p)}</span>`).join('') +
+          tabs.map(t => { const r = rdyOf(t); return `<span class="chip ${r}" data-table="${esc(t)}"><small>T${esc(t)}</small><b>${esc(f.teams[t])}</b>${r ? `<i>${r === 'rdy' ? '✓ ready' : '… not ready'}</i>` : ''}</span>`; }).join('');
+        if ($('mTeams').__h !== teamsHTML) { $('mTeams').innerHTML = teamsHTML; $('mTeams').__h = teamsHTML; }
+        // The pill always counts the match START would begin (after 0:00 that's the next one, not the one on screen).
+        const upM = upI != null ? info.list[upI] : null, upTabs = upM ? Object.keys(upM.teams) : [];
+        const nReady = refsOn && upM ? upTabs.filter(t => FLL.isReady(upI, t)).length : -1;
+        const rTxt = nReady < 0 ? '' : (upI !== info.focusIdx ? FLL.matchLabel(upM) + ': ' : '') + (nReady === upTabs.length ? '✓ All ready' : `${nReady}/${upTabs.length} ready`);
+        setText('mReady', rTxt);
+        const rCls = 'pill ' + (nReady === upTabs.length ? 'ok' : 'meh') + (rTxt ? '' : ' hidden'); if ($('mReady').className !== rCls) $('mReady').className = rCls;
+        const nx = info.next;
+        setText('mOnDeck', nx ? `On deck: ${FLL.matchLabel(nx)} · ${FLL.clock(nx.time)} · ${FLL.pairsOf(nx).map(p => 'Pair ' + p).join(' + ')}` : 'Last match');
+        setDis('prevBtn', busy || info.currentIdx <= 0); setDis('nextBtn', busy || info.currentIdx >= info.list.length - 1);
+        const aa = st.match.autoAdvance !== false; if (!autoAdvPending && $('autoAdv').checked !== aa) $('autoAdv').checked = aa;
+      }
+      const key = JSON.stringify([st.match, st.status, FLL.schedule && FLL.schedule.matches.length, FLL.schedule && FLL.schedule.shiftedBy, FLL.config && FLL.config.layout]);
+      if (key !== lastSchedKey) { lastSchedKey = key; renderSchedule(); }
+    }
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+
+  // ----- schedule table -----
+  function shiftTxt(ms) { const m = Math.round(Math.abs(ms) / 60000), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mi = m % 60; return (ms < 0 ? '−' : '+') + [d && d + ' d', h && h + ' h', (mi || !(d || h)) && mi + ' min'].filter(Boolean).join(' '); }
+  function renderSchedule() {
+    const sch = FLL.schedule, st = FLL.state;
+    if (!sch) { $('schedTable').innerHTML = '<tbody><tr><td class="muted">Load a schedule to see matches here.</td></tr></tbody>'; $('schedInfo').textContent = 'No schedule loaded'; return; }
+    const ev = sch.event || {};
+    $('schedInfo').textContent = `${ev.name || 'Schedule'} · ${sch.matches.length} matches · ${sch.source === 'nexus' ? 'Nexus' : 'CSV'}${sch.fetchedAt ? ' · fetched ' + new Date(sch.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}${sch.shiftedBy ? ' · times shifted ' + shiftTxt(sch.shiftedBy) : ''}`;
+    const tables = [...new Set(sch.matches.flatMap(m => Object.keys(m.teams)))].sort((a, b) => a - b);
+    const mm = st ? st.match : { current: 0, actualStarts: {} };
+    const live = st && (st.status === 'running' || st.status === 'paused') ? mm.live : null;
+    let html = `<thead><tr><th>#</th><th>Time</th><th>Pairs</th>${tables.map(t => `<th>${esc(FLL.tableName(t))}</th>`).join('')}<th>Started</th><th>Δ</th></tr></thead><tbody>`;
+    sch.matches.forEach((m, i) => {
+      const a = mm.actualStarts && mm.actualStarts[m.n];
+      const d = a && m.time != null ? Math.round((a - m.time) / 60000) : null;
+      const cls = i === live ? 'live' : i === mm.current ? 'cur' : a ? 'done' : '';
+      html += `<tr class="${cls}" data-i="${i}"><td class="n">${m.practice ? 'P' : ''}${m.n}</td><td class="tm">${esc(FLL.clock(m.time))}</td><td class="muted">${esc(FLL.pairsOf(m).join('+'))}</td>` +
+        tables.map(t => `<td>${esc(m.teams[t] || '')}</td>`).join('') +
+        `<td class="tm">${a ? esc(FLL.clock(a)) : ''}</td><td class="${d == null ? '' : d > 0 ? 'bad' : 'good'}">${d == null ? '' : (d > 0 ? '+' : '') + d}</td></tr>`;
+    });
+    $('schedTable').innerHTML = html + '</tbody>';
+    const cur = $('schedTable').querySelector('tr.cur, tr.live');
+    if (cur && !renderSchedule.scrolled) { cur.scrollIntoView({ block: 'nearest' }); }
+  }
+  $('schedTable').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-i]'); if (!tr) return;
+    const st = FLL.state; if (st && (st.status === 'running' || st.status === 'paused')) { toast('Stop the timer before changing match', true); return; }
+    FLL.cmd('goto', { index: +tr.dataset.i });
+  });
+  FLL.on('schedule', () => { lastSchedKey = ''; });
+
+  $('nexusBtn').onclick = () => { const u = $('nexusUrl').value.trim(); if (!u) return toast('Paste the Nexus event link first', true); $('nexusStatus').textContent = 'Fetching…'; FLL.cmd('nexusFetch', { url: u }); };
+  $('nexusAuto').onchange = e => FLL.cmd('nexusAuto', { on: e.target.checked });
+  $('csvFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const text = await f.text(); $('csvText').value = text;
+    FLL.cmd('scheduleCSV', { text, date: $('csvDate').value || null, name: f.name.replace(/\.[^.]+$/, '') });
+  };
+  $('csvLoad').onclick = () => { const text = $('csvText').value; if (!text.trim()) return toast('Paste a schedule first', true); FLL.cmd('scheduleCSV', { text, date: $('csvDate').value || null, name: 'Pasted schedule' }); };
+  $('csvDate').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  $('shiftBtn').onclick = () => {
+    const sch = FLL.schedule; if (!sch) return toast('No schedule loaded', true);
+    const i = Math.max(1, +$('shiftIdx').value || 1) - 1, m = sch.matches[i]; const v = $('shiftTime').value;
+    if (!m || m.time == null || !v) return toast('Pick a match and a time', true);
+    const d = new Date(m.time); const [h, mi] = v.split(':').map(Number); d.setHours(h, mi, 0, 0);
+    FLL.cmd('scheduleShift', { index: i, time: d.getTime() });
+  };
+  $('clearActuals').onclick = () => { if (confirm('Forget all recorded actual start times?')) FLL.cmd('clearActuals'); };
+  $('clearSched').onclick = () => { if (confirm('Remove the schedule from all screens?')) FLL.cmd('scheduleClear'); };
+
+  // ----- config: nexus, sounds, pairs -----
+  const CUE_SUB = { nature: { start: 'marimba + birdsong', warn: 'wind chimes', end: 'bell trio + ocean swell', abort: 'soft descending tones', call: 'marimba + thrush whistle' },
+    classic: { start: '“Charge” fanfare', warn: 'steam whistle', end: 'buzzer', abort: 'foghorn', call: 'doorbell ding-dong' } };
+  const CUE_INFO = { start: ['Match start', CUE_SUB.nature.start], warn: ['End game (0:30)', CUE_SUB.nature.warn], end: ['Match end', CUE_SUB.nature.end], abort: ['Abort / stop', CUE_SUB.nature.abort],
+    call: ['Ref calls Head Ref', CUE_SUB.nature.call + ' (this page only)'] };
+  let volBuilt = false, pairsBuilt = false;
+  function buildVol() {
+    let h = `<div class="lbl"><b>Master</b><small>all cues, all screens</small></div><input type="range" min="0" max="100" step="1" data-cue="master"><div class="pct" id="pct-master"></div><div class="acts"></div>`;
+    for (const [cue, [lbl, sub]] of Object.entries(CUE_INFO)) {
+      h += `<div class="lbl"><b>${lbl}</b><small data-sub="${cue}">${sub}</small></div><input type="range" min="0" max="200" step="1" data-cue="${cue}"><div class="pct" id="pct-${cue}"></div>
+        <div class="acts">${cue === 'call' ? '' : `<button data-test="${cue}" title="Play on every screen">▶ Test</button>`}<button data-here="${cue}" title="Play on this device">Here</button>
+        <label><button data-up="${cue}" type="button">Upload</button></label><input type="file" accept="audio/*" class="hidden" id="file-${cue}">
+        <span class="file none" id="fname-${cue}">synth</span><button data-del="${cue}" class="hidden" id="del-${cue}" title="Remove custom file">✕</button></div>`;
+    }
+    h += `<div class="lbl"><b>Call chime on projector</b><small>soft bells, audio only (no table shown)</small></div><input type="range" min="0" max="100" step="1" data-cue="callMain"><div class="pct" id="pct-callMain"></div>
+        <div class="acts"><button data-test="callSoft" title="Play on the projector">▶ Projector</button><button data-here="callSoft" title="Play on this device">Here</button></div>`;
+    $('volGrid').innerHTML = h; volBuilt = true;
+    let tmr = {};
+    $('volGrid').querySelectorAll('input[type=range]').forEach(r => {
+      const cue = r.dataset.cue, send = () => FLL.cmd('volume', { cue, value: r.value / 100 });
+      r.addEventListener('input', () => { $('pct-' + cue).textContent = r.value + '%'; r.dataset.busy = '1'; clearTimeout(tmr[cue]); tmr[cue] = setTimeout(send, 80); });
+      r.addEventListener('change', () => { send(); setTimeout(() => delete r.dataset.busy, 400); });
+    });
+    $('volGrid').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.test) FLL.cmd('testSound', { cue: b.dataset.test });
+      if (b.dataset.here) { FLLSound.unlock(); FLLSound.play(b.dataset.here, true); }
+      if (b.dataset.up) $('file-' + b.dataset.up).click();
+      if (b.dataset.del && confirm('Remove the custom sound and go back to the built-in one?')) FLL.cmd('soundDelete', { cue: b.dataset.del });
+    });
+    for (const cue of Object.keys(CUE_INFO)) $('file-' + cue).onchange = e => uploadSound(cue, e.target.files[0]);
+  }
+  async function uploadSound(cue, f) {
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) return toast('File too large (max 8 MB)', true);
+    try {
+      const r = await fetch('/api/sound/' + cue, { method: 'POST', body: f, headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(f.name), 'X-FLL-PIN': FLL.pin || localStorage.getItem('fll.pin') || '' } });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+      toast(`Uploaded ${f.name} for ${CUE_INFO[cue][0]}`);
+    } catch (e) { toast('Upload failed: ' + e.message, true); }
+  }
+  function applyConfig(c) {
+    if (!volBuilt) buildVol();
+    $('volGrid').querySelectorAll('input[type=range]').forEach(r => {
+      if (r.dataset.busy) return;
+      const v = r.dataset.cue === 'master' ? c.sound.master : r.dataset.cue === 'callMain' ? (c.sound.callMain == null ? 0.35 : c.sound.callMain) : c.sound.cues[r.dataset.cue].vol;
+      r.value = Math.round(v * 100); $('pct-' + r.dataset.cue).textContent = Math.round(v * 100) + '%';
+    });
+    for (const [cue, v] of Object.entries(c.sound.cues)) {
+      const el = $('fname-' + cue); if (!el) continue;
+      el.textContent = v.file ? v.file.name : 'synth'; el.className = 'file' + (v.file ? '' : ' none'); el.title = v.file ? v.file.name : 'built-in synthesized sound';
+      $('del-' + cue).classList.toggle('hidden', !v.file);
+    }
+    if (document.activeElement !== $('nexusUrl') && c.nexus.url && !$('nexusUrl').value) $('nexusUrl').value = c.nexus.url;
+    $('nexusAuto').checked = !!c.nexus.auto;
+    $('nexusStatus').textContent = c.nexus.error ? '⚠️ ' + c.nexus.error : c.nexus.lastFetch ? 'Last fetched ' + new Date(c.nexus.lastFetch).toLocaleTimeString() + (c.nexus.auto ? ' · auto-refresh every minute (paused while a match runs)' : '') : 'Needs internet on this laptop. Offline? Upload or paste a CSV instead.';
+    if (!pairsBuilt || !$('pairsEd').contains(document.activeElement)) buildPairs(c.layout.pairs);
+    drawQR();
+    applyBreakCfg(c);
+  }
+  FLL.on('config', applyConfig);
+  function buildPairs(pairs) {
+    $('pairsEd').innerHTML = pairs.map(p => `<div class="prow"><input class="pid" value="${esc(p.id)}" placeholder="ID"><input class="grow tbl" value="${esc(p.tables.join(', '))}" placeholder="tables, e.g. 1, 2"><button class="rm">✕</button></div>`).join('');
+    pairsBuilt = true;
+  }
+  $('pairsEd').addEventListener('click', e => { if (e.target.classList.contains('rm')) e.target.parentElement.remove(); });
+  $('addPair').onclick = () => { const d = document.createElement('div'); d.className = 'prow'; d.innerHTML = '<input class="pid" placeholder="ID"><input class="grow tbl" placeholder="tables, e.g. 7, 8"><button class="rm">✕</button>'; $('pairsEd').appendChild(d); };
+  $('savePairs').onclick = () => {
+    const pairs = [...$('pairsEd').querySelectorAll('.prow')].map(r => ({ id: r.querySelector('.pid').value.trim(), tables: r.querySelector('.tbl').value.split(/[\s,;/&+]+/).filter(Boolean) })).filter(p => p.id && p.tables.length);
+    FLL.cmd('layout', { pairs }); toast('Pairs saved');
+  };
+
+  // ----- connected displays -----
+  FLL.on('clients', list => {
+    const d = list.filter(c => c.role === 'display').sort((a, b) => String(a.view + a.name).localeCompare(String(b.view + b.name), undefined, { numeric: true }));
+    $('count').textContent = d.length;
+    if ($('clients').contains(document.activeElement) && document.activeElement.type === 'range') return;
+    $('clients').innerHTML = d.length ? d.map(c => {
+      const lat = c.rtt == null ? '–' : Math.round(c.rtt / 2) + ' ms';
+      const latCls = c.rtt == null ? 'muted' : c.rtt < 60 ? 'good' : c.rtt < 200 ? 'meh' : 'bad';
+      const stale = c.lastSeenAgo > 6000 ? ` <span class="bad">(${Math.round(c.lastSeenAgo / 1000)} s)</span>` : '';
+      const p = c.pref || { vol: 1, muted: false };
+      return `<tr><td class="n">${esc(c.name)}<div class="muted" style="font-weight:400;font-size:12px">${esc(c.ip)}${stale}</div></td><td class="muted">${esc(c.view || '')}</td><td class="${latCls}">${lat}</td>
+        <td><input type="range" class="dispvol" min="0" max="100" value="${Math.round((p.vol == null ? 1 : p.vol) * 100)}" data-dev="${esc(c.deviceId)}"> <span class="muted">${Math.round((p.vol == null ? 1 : p.vol) * 100)}%</span></td>
+        <td style="white-space:nowrap"><button data-mute="${esc(c.deviceId)}" data-m="${p.muted ? 0 : 1}" title="${p.muted ? 'Unmute' : 'Mute'} this screen">${p.muted ? '🔇' : (c.audio ? '🔊' : '🔈')}</button> <button data-ping="${esc(c.deviceId)}" title="Test chime on this screen">▶</button></td></tr>`;
+    }).join('') : '<tr><td colspan="5" class="muted">No displays yet</td></tr>';
+  });
+  $('clients').addEventListener('change', e => { if (e.target.dataset.dev) FLL.cmd('displayPref', { deviceId: e.target.dataset.dev, vol: e.target.value / 100 }); });
+  $('clients').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.mute) FLL.cmd('displayPref', { deviceId: b.dataset.mute, muted: b.dataset.m === '1' });
+    if (b.dataset.ping) FLL.cmd('testSound', { cue: 'start', deviceId: b.dataset.ping });
+  });
+
+  // ----- share URLs + QR (generated locally, works offline) -----
+  let urls = [];
+  function drawQR() {
+    const sel = $('qrRole'); const pairs = FLL.config ? FLL.config.layout.pairs : [];
+    const opts = [['role=main', 'Main / projector'], ...pairs.map(p => ['pair=' + encodeURIComponent(p.id), 'Pair ' + p.id + ' (tables ' + p.tables.join('&') + ')']), ['role=queue', 'Queuing screen'], ['role=timer', 'Timer only'], ['', 'Let the screen choose']];
+    const keep = sel.value;
+    const optHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    if (sel.innerHTML !== optHTML) { sel.innerHTML = optHTML; if (keep != null && opts.some(o => o[0] === keep)) sel.value = keep; }
+    const q = sel.value ? '?' + sel.value : '';
+    const base = (urls[0] && urls[0].url) || location.origin;
+    try { const qr = qrcode(0, 'M'); qr.addData(base + '/display' + q); qr.make(); $('qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); } catch (e) {}
+    $('urlList').innerHTML = (urls.length ? urls : [{ iface: 'this page', url: location.origin }]).map(u => `<div><a href="${esc(u.url)}/display${esc(q)}" target="_blank">${esc(u.url)}/display${esc(q)}</a> <span class="muted">(${esc(u.iface)})</span></div>`).join('');
+  }
+  $('qrRole').addEventListener('change', drawQR);
+
+  // ----- table referees: per-table links + QR codes, READY overview, "Call Head Ref" banner -----
+  function refTables() {
+    const s = new Set();
+    if (FLL.config) FLL.config.layout.pairs.forEach(p => p.tables.forEach(t => s.add(String(t))));
+    if (FLL.schedule) FLL.schedule.matches.forEach(m => Object.keys(m.teams).forEach(t => s.add(t)));
+    return [...s].sort((a, b) => a - b);
+  }
+  let refGridKey = '';
+  function drawRefs() {
+    const base = (urls[0] && urls[0].url) || location.origin, tabs = refTables();
+    const key = base + '|' + tabs.join(',');
+    if (key !== refGridKey) {
+      refGridKey = key;
+      $('refGrid').innerHTML = tabs.map(t => {
+        const u = base + '/ref?table=' + encodeURIComponent(t); let svg = '';
+        try { const qr = qrcode(0, 'M'); qr.addData(u); qr.make(); svg = qr.createSvgTag({ cellSize: 3, margin: 0, scalable: true }); } catch (e) {}
+        return `<div class="rc" data-table="${esc(t)}"><div class="q">${svg}</div><a href="${esc(u)}" target="_blank">${esc(FLL.tableName(t))}</a><span class="st" id="refst-${esc(t)}"></span></div>`;
+      }).join('') || '<div class="muted">Tables appear here once pairs or a schedule are set.</div>';
+    }
+    const st = FLL.state; if (!st) return;
+    const r = st.refs || {}; $('refConfirm').checked = r.confirm !== false;
+    setText('refInfo', r.used ? 'referee pages in use · links: ' + base + '/ref?table=N' : 'not used yet · open ' + base + '/ref');
+    for (const t of tabs) {
+      const el = $('refst-' + t); if (!el) continue;
+      const nx = FLL.nextForTable(t), call = FLL.calls[t] && !FLL.calls[t].ackAt;
+      const txt = call ? '🙋 calling you' : !nx ? 'no more matches' : nx.live ? FLL.matchLabel(nx.m) + ' playing' : (FLL.isReady(nx.i, t) ? '✓ ready · ' : '') + FLL.matchLabel(nx.m);
+      setText(el, txt); const c = 'st' + (call ? ' bad' : nx && !nx.live && FLL.isReady(nx.i, t) ? ' good' : ''); if (el.className !== c) el.className = c;
+    }
+  }
+  ['state', 'config', 'schedule', 'calls'].forEach(ev => FLL.on(ev, drawRefs));
+  $('refConfirm').onchange = e => FLL.cmd('refConfig', { confirm: e.target.checked });
+  $('refClear').onclick = () => FLL.cmd('refClear');
+  // Call sound is a one-shot per call id: calls that existed before this page joined (reload, reconnect, late join) never ring.
+  let seenCalls = null;
+  window.__callPlays = [];
+  function renderCalls() {
+    const open = Object.entries(FLL.calls || {}).filter(([, c]) => !c.ackAt).sort((a, b) => a[1].at - b[1].at);
+    const h = open.map(([t, c]) => `<div class="callrow" data-call="${esc(t)}">🙋 ${esc(FLL.tableName(t))} is calling the Head Ref<span class="w">since ${esc(FLL.clock(c.at))}</span><button data-ack="${esc(t)}">On my way ✓</button></div>`).join('');
+    if ($('callBanner').__h !== h) { $('callBanner').innerHTML = h; $('callBanner').__h = h; }
+  }
+  FLL.on('calls', calls => {
+    const list = Object.values(calls || {});
+    if (seenCalls === null) seenCalls = new Set(list.map(c => c.id));
+    else for (const c of list) if (!seenCalls.has(c.id)) {
+      seenCalls.add(c.id);
+      if (!c.ackAt && FLL.serverNow() - c.at < 10000) { window.__callPlays.push(c.id); FLLSound.play('call'); }
+    }
+    renderCalls();
+  });
+  $('callBanner').addEventListener('click', e => { const b = e.target.closest('button[data-ack]'); if (b) FLL.cmd('callAck', { table: b.dataset.ack }); });
+  fetch('/api/info').then(r => r.json()).then(i => {
+    const here = location.origin, local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    urls = local || i.urls.some(u => u.url === here) ? i.urls.slice() : [{ iface: 'this address', url: here }].concat(i.urls);
+    if (!local) urls.sort((a, b) => (b.url === here) - (a.url === here));
+    drawQR(); refGridKey = ''; drawRefs();
+  }).catch(drawQR);
+})();
+</script>
+</body>
+</html>

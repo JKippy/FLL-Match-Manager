@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FLL Match Timer</title>
+<style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0d10;color:#e9edf2;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;padding:20px}
+a{display:block;width:min(90vw,380px);text-align:center;padding:20px;border-radius:16px;font-size:21px;font-weight:800;text-decoration:none}
+.c{background:#3ddc84;color:#000}.d{background:#22262d;color:#fff}p{color:#8a8f98;margin:0}</style></head>
+<body><h1 style="margin:0 0 8px">🏁 FLL Match Timer</h1>
+<a class="d" href="/display">Screen / display (choose role)</a>
+<a class="c" href="/control">Head Referee control</a>
+<a class="d" href="/ref" id="refLink">Table referee (phone)</a>
+<div id="refTables" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:min(90vw,380px)"></div>
+<p>Synced over the local network</p>
+<script>
+// Table picker for the referee page: one button per table from the current layout / schedule.
+fetch('/api/tables').then(r => r.json()).then(j => {
+  document.getElementById('refTables').innerHTML = (j.tables || []).map(t => '<a class="d" style="width:auto;flex:1 0 28%;padding:14px 8px;font-size:18px" href="/ref?table=' + encodeURIComponent(t) + '">Table ' + String(t).replace(/[&<>"]/g, '') + '</a>').join('');
+}).catch(() => {});
+</script></body></html>
