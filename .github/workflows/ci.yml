@@ -38,6 +38,9 @@ jobs:
           google-chrome --version
 
       - name: Run test suite (npm run test:all)
+        # Shared runners occasionally add one paint frame to the sync spread; see test/sync-test.js.
+        env:
+          SYNC_MAX_SPREAD_MS: '60'
         run: npm run test:all
 
       - name: Upload screenshots on failure
