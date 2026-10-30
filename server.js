@@ -566,32 +566,46 @@ function wsAccept(req, socket) {
     ping() { if (c.alive) try { socket.write(frame(Buffer.alloc(0), 9)); } catch (e) {} },
   };
   clients.set(c.id, c);
-  let buf = Buffer.alloc(0), fragments = [];
+  // Strict RFC 6455 reading: client frames must be masked, no reserved bits, known opcodes only, control frames short and
+  // unfragmented, continuation only inside a message, and a hard cap on one message (all fragments) and on unread input.
+  const MAX_MSG = 2 << 20;   // 2 MB: the largest legit message is a schedule CSV (capped at 1 MB)
+  let buf = Buffer.alloc(0), fragments = [], fragLen = 0, inMsg = false;
+  const fail = code => { if (!c.alive) return; c.alive = false; clients.delete(c.id);
+    try { const b = Buffer.alloc(2); b.writeUInt16BE(code, 0); socket.end(frame(b, 8)); } catch (e) {} setTimeout(() => socket.destroy(), 1000).unref(); broadcastClients(); };
   socket.on('data', d => {
+    if (!c.alive) return;
     c.lastSeen = now();
-    buf = Buffer.concat([buf, d]);
-    while (true) {
+    buf = buf.length ? Buffer.concat([buf, d]) : d;
+    if (buf.length > MAX_MSG + 16) return fail(1009);
+    while (c.alive) {
       if (buf.length < 2) return;
-      const fin = buf[0] & 0x80, op = buf[0] & 0x0f, masked = buf[1] & 0x80;
+      const fin = buf[0] & 0x80, rsv = buf[0] & 0x70, op = buf[0] & 0x0f, masked = buf[1] & 0x80;
+      if (rsv) return fail(1002);
+      if (!masked) return fail(1002);
+      if (![0, 1, 2, 8, 9, 10].includes(op)) return fail(1002);
+      const control = op >= 8;
       let len = buf[1] & 0x7f, off = 2;
+      if (control && (len > 125 || !fin)) return fail(1002);
       if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
-      else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
-      if (len > 4 << 20) return c.close();
-      const need = off + (masked ? 4 : 0) + len;
+      else if (len === 127) { if (buf.length < 10) return; const big = buf.readBigUInt64BE(2); if (big > BigInt(MAX_MSG)) return fail(1009); len = Number(big); off = 10; }
+      if (!control && fragLen + len > MAX_MSG) return fail(1009);
+      const need = off + 4 + len;
       if (buf.length < need) return;
-      let payload = buf.slice(off + (masked ? 4 : 0), need);
-      if (masked) { const mk = buf.slice(off, off + 4); payload = Buffer.from(payload); for (let i = 0; i < payload.length; i++) payload[i] ^= mk[i & 3]; }
+      const mk = buf.slice(off, off + 4), payload = Buffer.from(buf.slice(off + 4, need));
+      for (let i = 0; i < payload.length; i++) payload[i] ^= mk[i & 3];
       buf = buf.slice(need);
       if (op === 8) return c.close();
-      if (op === 9) { socket.write(frame(payload, 10)); continue; }
+      if (op === 9) { try { socket.write(frame(payload, 10)); } catch (e) {} continue; }
       if (op === 10) continue;
-      if (op === 1 || op === 0) {
-        fragments.push(payload);
-        if (!fin) continue;
-        const text = Buffer.concat(fragments).toString('utf8'); fragments = [];
-        let msg; try { msg = JSON.parse(text); } catch (e) { continue; }
-        try { handleMessage(c, msg); } catch (e) { c.send({ t: 'error', error: String(e.message || e) }); }
-      }
+      if (op === 0 && !inMsg) return fail(1002);
+      if (op !== 0 && inMsg) return fail(1002);
+      if (op === 2) { if (!fin) { inMsg = 'bin'; fragLen += len; } continue; }   // binary: not used, ignored
+      if (inMsg === 'bin') { fragLen += len; if (fin) { inMsg = false; fragLen = 0; } continue; }
+      fragments.push(payload); fragLen += len;
+      if (!fin) { inMsg = 'text'; continue; }
+      const text = Buffer.concat(fragments).toString('utf8'); fragments = []; fragLen = 0; inMsg = false;
+      let msg; try { msg = JSON.parse(text); } catch (e) { continue; }
+      try { handleMessage(c, msg); } catch (e) { c.send({ t: 'error', error: String(e.message || e) }); }
     }
   });
   socket.on('close', () => { c.alive = false; clients.delete(c.id); broadcastClients(); });
