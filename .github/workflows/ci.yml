@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (Node 22, Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/package-lock.json
+
+      # The app has no runtime dependencies; the browser tests use playwright-core
+      # driving the Google Chrome that ships on GitHub's ubuntu runners.
+      - name: Install test dependencies
+        run: npm ci --prefix test
+
+      - name: Check Chrome
+        run: |
+          echo "CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          google-chrome --version
+
+      - name: Run test suite (npm run test:all)
+        run: npm run test:all
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+          if-no-files-found: ignore

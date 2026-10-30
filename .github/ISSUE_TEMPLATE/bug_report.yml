@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in FLL Match Manager doesn't work as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Do not report security problems here** (crashes from crafted requests, PIN bypass, XSS, etc.).
+        Use the repository's private vulnerability reporting instead (see SECURITY.md). Never paste a real event PIN.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, commands, or a test script that triggers the bug.
+      placeholder: |
+        1. npm start -- --pin <test pin>
+        2. Open /control and press START
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include console/server log output if you have it.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Version from package.json or the release tag (e.g. 0.5.1) or a commit SHA.
+      placeholder: "0.5.1"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device / browser
+      description: Where it happened, e.g. "iPhone 15, iOS 18 Safari", "MacBook Safari 18", "Chrome 130 on projector laptop".
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: "HIGH = breaks or stops a live match; MED = wrong behaviour with a workaround; LOW = cosmetic / minor"
+      options:
+        - HIGH
+        - MED
+        - LOW
+    validations:
+      required: true
+  - type: input
+    id: findings
+    attributes:
+      label: FINDINGS id (if any)
+      placeholder: "FLL-0xx"
