@@ -625,7 +625,7 @@ const cspHashCache = new Map();
 function inlineScriptHashes(html) {
   const key = crypto.createHash('sha1').update(html).digest('hex');
   if (cspHashCache.has(key)) return cspHashCache.get(key);
-  const out = [], re = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi; let m;
+  const out = [], re = /<script(\s[^>]*)?>([\s\S]*?)<\/script\s*>/gi; let m;
   while ((m = re.exec(html))) if (!/\ssrc\s*=/i.test(m[1] || '') && m[2].length) out.push("'sha256-" + crypto.createHash('sha256').update(m[2], 'utf8').digest('base64') + "'");
   if (cspHashCache.size > 50) cspHashCache.clear();
   cspHashCache.set(key, out); return out;
