@@ -1,1 +1,1 @@
-{ "name": "fll-timer-tests", "private": true, "devDependencies": { "playwright-core": "^1.48.0" } }
+{"name":"fll-timer-tests","private":true,"devDependencies":{"playwright-core":"1.64.1"}}
