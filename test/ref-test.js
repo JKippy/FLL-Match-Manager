@@ -43,6 +43,8 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
     const shift = (idx, at) => cmd('scheduleShift', { index: idx, time: at });
     const modal = () => control.evaluate(() => document.getElementById('confirmModal').classList.contains('hidden') ? null : document.getElementById('confirmMsg').textContent + ' | ' + document.getElementById('confirmWhy').textContent);
     const readyOf = idx => control.evaluate(i => Object.keys(FLL.readyOf(i)).sort().join(','), idx);
+    // Each table's referee link (its QR code on the control page) carries that table's key.
+    const refUrl = async t => { await waitFor(() => control.evaluate(t => !!(FLL.refKeys || {})[t], t)); return control.evaluate(t => document.querySelector(`#refGrid .rc[data-table="${t}"] a`).href, t); };
 
     await control.click('#csvBox summary');
     await control.setInputFiles('#csvFile', SAMPLE);
@@ -52,7 +54,7 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
 
     // ---------- referee pages ----------
     const R = {};
-    for (const t of ['1', '2', '3', '4', '5']) R[t] = await mk(PHONE, `${BASE}/ref?table=${t}`);
+    for (const t of ['1', '2', '3', '4', '5']) R[t] = await mk(PHONE, await refUrl(t));
     await sleep(1800);
     check('opening a referee page turns the ready check on', (await st()).refs.used === true);
     const refTxt = p => p.evaluate(() => document.getElementById('ref').innerText.replace(/\s+/g, ' '));
@@ -118,7 +120,7 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
 
     // ---------- all ready: no confirm ----------
     await shift(1, Date.now() + 30000); await sleep(300);
-    const R6 = await mk(PHONE, `${BASE}/ref?table=6`); await sleep(1200);
+    const R6 = await mk(PHONE, await refUrl('6')); await sleep(1200);
     check('C refs: Match 2 is up', (await rs(R['5'])).matchIdx === 1 && (await rs(R6)).matchIdx === 1);
     // A+B refs can get ready for Match 3 while Match 2 (pair C) is up
     await R['1'].tap('#readyBtn'); await sleep(300);
@@ -222,6 +224,17 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
     await control.evaluate(() => document.getElementById('refCard').scrollIntoView());
     await control.screenshot({ path: path.join(SHOTS, 'v5_control_ref_links.png') });
     await control.click('#callBanner button[data-ack="1"]');
+
+    // ---------- Regenerate ref links ----------
+    const oldLink = await refUrl('6');
+    check('each table QR link carries its own key', /[?&]k=/.test(oldLink) && oldLink !== await refUrl('5'), oldLink.replace(/k=.*/, 'k=…'));
+    check('referee page with its table link is accepted', await R6.evaluate(() => FLL.refOk === true));
+    await control.click('#refRegen'); await sleep(800);
+    const newLink = await refUrl('6');
+    check('Regenerate ref links: the QR link changes', newLink !== oldLink);
+    check('Regenerate ref links: a phone on the old link is told to scan again (READY off)', await R6.evaluate(() => FLL.refOk === false && document.getElementById('readyBtn').disabled && /Scan your table/.test(document.getElementById('readySub').textContent)));
+    const R6b = await mk(PHONE, newLink); await sleep(1200);
+    check('Regenerate ref links: the new link works', await R6b.evaluate(() => FLL.refOk === true));
   } catch (e) { console.log('TEST CRASH', e); failed++; }
   finally {
     await browser.close(); srv.kill();

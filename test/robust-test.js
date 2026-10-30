@@ -130,7 +130,8 @@ function req(method, p, headers, body) {
     // ---------- 9. projector call chime ----------
     const main = await mk(`${BASE}/display?role=main&autostart=1`, 'window.__DEVICE_ID="main1";', { width: 1920, height: 1080 });
     const pairA = await mk(`${BASE}/display?pair=A&autostart=1`, 'window.__DEVICE_ID="pa";');
-    const ref1 = await mk(`${BASE}/ref?table=1`, null, { width: 390, height: 844 });
+    await waitFor(() => control.evaluate(() => !!document.querySelector('#refGrid .rc[data-table="1"] a[href*="k="]')));
+    const ref1 = await mk(await control.evaluate(() => document.querySelector('#refGrid .rc[data-table="1"] a').href), null, { width: 390, height: 844 });
     await sleep(1500);
     const plays = (p, cue) => p.evaluate(c => (window.__plays || []).filter(x => x.cue === c && !x.test), cue);
     const mainText = () => main.evaluate(() => document.body.innerText.replace(/\d+:\d\d/g, '').replace(/\s+/g, ' '));
@@ -156,6 +157,8 @@ function req(method, p, headers, body) {
     await cmd('volume', { cue: 'callMain', value: 0.1 }); await sleep(300);
     await cmd('displayPref', { deviceId: 'main1', vol: 0.5 }); await sleep(300);
     await ref1.evaluate(() => FLL.cmd('refCancel', { table: '1' })); await ref1.evaluate(() => FLL.cmd('refCall', { table: '1' })); await sleep(700);
+    check('cancel + call again right away does not chime twice', (await plays(main, 'callSoft')).length === 0);
+    await cmd('callAck', { table: '1' }); await ref1.evaluate(() => FLL.cmd('refCall', { table: '1' })); await sleep(700);
     mp = await plays(main, 'callSoft');
     const master = (await st()) && (await control.evaluate(() => FLLSound.cfg.master));
     check('new call chimes again with its own volume x per-display volume', mp.length === 1 && Math.abs(mp[0].gain - master * 0.1 * 0.5) < 0.01, { mp, master });

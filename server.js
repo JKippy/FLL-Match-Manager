@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const net = require('net');
 const crypto = require('crypto');
 const Sched = require('./lib/schedule');
 
@@ -20,6 +21,8 @@ const PORT = parseInt(arg('port', '8080'), 10);
 const PIN = String(arg('pin', '') || '');
 const START_LEAD_MS = parseInt(arg('lead', '600'), 10);
 const DATA_DIR = path.resolve(arg('data', path.join(__dirname, 'data')));
+// Extra host names screens may use to reach this laptop (besides IP addresses, localhost and this computer's name), comma separated.
+const ALLOW_HOSTS = String(arg('allow-host', '') || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
 const PUBLIC = path.join(__dirname, 'public');
 const SOUND_DIR = path.join(DATA_DIR, 'sounds');
 const CUES = ['start', 'warn', 'end', 'abort', 'call'];
@@ -47,7 +50,7 @@ const store = {
   display: { theme: 'nature', queueCount: 2 },
   // Table referees (the /ref page): ready[matchIndex][table] = time they tapped READY; calls[table] = a "Call Head Ref" request.
   // used: a ref page has been opened at least once (only then does START check readiness); confirm: the Head Ref's on/off switch.
-  refs: { ready: {}, calls: {}, callSeq: 0, used: false, confirm: true },
+  refs: { ready: {}, calls: {}, callSeq: 0, used: false, confirm: true, keys: {} },
 };
 // Display prefs are keyed by a client-chosen id: a null-prototype object so "__proto__" & co. can never touch Object.prototype.
 const validDeviceId = id => typeof id === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(id) && !/^(__proto__|constructor|prototype)$/.test(id);
@@ -89,6 +92,7 @@ try {
   for (const k of ['runId', 'abortId']) if (!store.timer[k]) store.timer[k] = 0;
   if (!store.timer.matchDuration) store.timer.matchDuration = store.timer.duration;
   store.refs = Object.assign({ ready: {}, calls: {}, callSeq: 0, used: false, confirm: true }, store.refs);
+  if (!store.refs.keys || typeof store.refs.keys !== 'object' || Array.isArray(store.refs.keys)) store.refs.keys = {};
 } catch (e) { if (e) loudly('Saved state could not be applied: ' + (e.message || e)); }
 // Saved synchronously and atomically BEFORE a command is acked: write a temp file, fsync, rename over state.json.
 // The previous good file is copied to state.json.bak (at most every 10 s) so a damaged file can be recovered.
@@ -141,9 +145,35 @@ function pruneReady() {
   for (const k of Object.keys(r)) if (floor == null || +k < floor || !Object.keys(r[k]).length) delete r[k];
 }
 const allTables = () => [...new Set([].concat(...store.layout.pairs.map(p => p.tables.map(String)), ...(store.schedule ? store.schedule.matches.map(x => Object.keys(x.teams)) : [])))];
+// Each table's referee link carries its own key (QR codes on the Head Ref page). A referee phone can only act for the table its
+// key belongs to; "Regenerate ref links" replaces every key. Keys go only to PIN-authenticated control pages, never in the state.
+const newRefKey = () => crypto.randomBytes(9).toString('base64url');
+function refKeys() {
+  const K = store.refs.keys; let added = false;
+  for (const t of allTables()) if (!Object.prototype.hasOwnProperty.call(K, t)) { K[t] = newRefKey(); added = true; }
+  if (added) save();
+  return K;
+}
+function refKeyOk(table, key) {
+  const K = store.refs.keys, want = Object.prototype.hasOwnProperty.call(K, table) ? K[table] : null;
+  if (!want || typeof key !== 'string') return false;
+  const a = Buffer.from(key), b = Buffer.from(want);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function refAllowed(c, table) {
+  if (c.role === 'control' && c.authed) return true;
+  return c.role === 'ref' && (c.refAll || (c.refTable === table && refKeyOk(table, c.refKey)));
+}
+function sendRefKeys(c) { if (c.role === 'control' && c.authed) c.send({ t: 'refKeys', keys: Object.assign({}, refKeys()) }); }
+function broadcastRefKeys() { for (const c of clients.values()) sendRefKeys(c); }
+// A table that called and then cancelled doesn't chime the projector again for 30 s (tap / undo / tap); after the Head Ref
+// acknowledges, the next call chimes right away. Memory only.
+const chimeMem = new Map();
 function refCommand(msg, c) {
   const R = refs(), t = now(), table = String(msg.table || '').trim().slice(0, 12);
   if (!table || !allTables().includes(table)) refuse('Unknown table ' + (table || '(none)'));
+  if (!refAllowed(c, table)) refuse(c.role === 'ref' && c.refTable && c.refTable !== table ? 'This phone is set up for ' + c.refTable + ', not ' + table
+    : 'This referee link is not valid (old or incomplete). Scan your table\'s QR code on the Head Ref screen again.', 'reflink');
   switch (msg.cmd) {
     case 'refReady': {
       const sch = store.schedule; if (!sch) refuse('No schedule loaded yet');
@@ -161,8 +191,12 @@ function refCommand(msg, c) {
         R.calls[table] = { id: ++R.callSeq, at: t, ackAt: null, by: c.name || '' };
         // The projector plays a soft chime so the Head Ref looks at the tablet. Sent live only (never part of the state, so no
         // replay on reconnect / late join), to main displays only, and WITHOUT the table: the audience can't tell who called.
-        const chime = { t: 'chime', id: R.callSeq, at: t };
-        for (const x of clients.values()) if (x.role === 'display' && x.view === 'main') x.send(chime);
+        const cm = chimeMem.get(table);
+        if (!cm || t - cm >= 30000) {
+          chimeMem.set(table, t);
+          const chime = { t: 'chime', id: R.callSeq, at: t };
+          for (const x of clients.values()) if (x.role === 'display' && x.view === 'main') x.send(chime);
+        }
       }
       break;
     case 'refCancel': delete R.calls[table]; break;
@@ -246,13 +280,20 @@ function handleMessage(c, msg) {
       c.deviceId = validDeviceId(msg.deviceId) ? msg.deviceId : null;   // anything odd ("__proto__", "constructor", …) = no saved prefs
       c.name = String(msg.name || '').slice(0, 40) || (c.role === 'control' ? 'Control' : 'Display ' + c.id);
       if (c.role === 'control' && msg.pin) checkPin(c, msg.pin); else c.authed = !PIN;
+      if (c.role === 'ref') {
+        c.refTable = String(msg.table || '').trim().slice(0, 12) || null; c.refKey = typeof msg.key === 'string' ? msg.key.slice(0, 64) : null;
+        c.refAll = false;
+        if (PIN && msg.pin) { const r = pinCheck(c.ip, 'sock:' + c.id, msg.pin); c.refAll = r.ok; }   // the Head Ref's own phone
+      }
       if (c.deviceId && c.role === 'display') { const d = store.displays[c.deviceId] = store.displays[c.deviceId] || { vol: 1, muted: false }; d.name = c.name; d.view = c.view; }
-      c.send({ t: 'welcome', id: c.id, pinRequired: !!PIN, authed: c.authed, lead: START_LEAD_MS, error: c.authError });
+      c.send({ t: 'welcome', id: c.id, pinRequired: !!PIN, authed: c.authed, lead: START_LEAD_MS, error: c.authError,
+        refOk: c.role === 'ref' ? !!(c.refAll || (c.refTable && refKeyOk(c.refTable, c.refKey))) : undefined });
       if (c.role === 'ref' && !store.refs.used) { store.refs.used = true; save(); broadcastState(); }
       c.send(configMsg(c)); c.send(scheduleMsg()); c.send(stateMsg());
       if (c.role !== 'display') c.send(callsMsg());
+      sendRefKeys(c);
       broadcastClients(); return;
-    case 'auth': checkPin(c, msg.pin); c.send({ t: 'auth', authed: c.authed, error: c.authError, retryIn: c.retryIn }); if (c.authed) broadcastClients(); return;
+    case 'auth': checkPin(c, msg.pin); c.send({ t: 'auth', authed: c.authed, error: c.authError, retryIn: c.retryIn }); if (c.authed) { sendRefKeys(c); broadcastClients(); } return;
     case 'report':
       c.rtt = msg.rtt; c.offset = msg.offset; c.lastSeen = now();
       if (typeof msg.name === 'string' && msg.name) c.name = msg.name.slice(0, 40);
@@ -262,6 +303,7 @@ function handleMessage(c, msg) {
       const reply = (ok, e) => msg.id != null ? c.send({ t: 'ack', id: msg.id, cmd: msg.cmd, ok, error: e ? String(e.message || e) : undefined, code: e && e.code, info: e && e.info })
         : (!ok && c.send({ t: 'error', error: String(e.message || e) }));
       // Table referees need no PIN: they can only mark their own table ready or call the Head Ref.
+      if (REF_CMDS.includes(msg.cmd) && !refRateOk(c)) { reply(false, new Error('Too many taps. Wait a moment and try again.')); return; }
       if (REF_CMDS.includes(msg.cmd)) { Promise.resolve().then(() => refCommand(msg, c)).then(() => reply(true), e => reply(false, e)); return; }
       if (c.role !== 'control' || !c.authed) { reply(false, new Error('Not authorized: enter the Head Ref PIN')); return; }
       Promise.resolve().then(() => runCommand(msg, c)).then(() => reply(true), e => reply(false, e));
@@ -270,6 +312,15 @@ function handleMessage(c, msg) {
 }
 
 const REF_CMDS = ['refReady', 'refCall', 'refCancel'];
+// Referee buttons need no PIN, so they are rate limited: 20 per 10 s per connection and 60 per 10 s per address.
+const refHits = new Map();
+function refRateOk(c) {
+  const t = now(), keys = ['s:' + c.id, 'ip:' + c.ip], lim = [20, 60];
+  for (let i = 0; i < 2; i++) { const a = (refHits.get(keys[i]) || []).filter(x => t - x < 10000); if (a.length >= lim[i]) { refHits.set(keys[i], a); return false; } refHits.set(keys[i], a); }
+  for (const k of keys) refHits.get(k).push(t);
+  if (refHits.size > 5000) for (const [k, a] of refHits) if (!a.length || t - a[a.length - 1] > 10000) refHits.delete(k);
+  return true;
+}
 // ---------- PIN brute-force protection ----------
 // 5 free tries, then a lockout that doubles (1 s, 2 s, 4 s … max 5 min), per socket AND per IP (a new socket doesn't reset it).
 // While locked out every attempt is refused without even comparing the PIN. A correct PIN clears the counter.
@@ -399,11 +450,16 @@ async function runCommand(msg, c) {
     // ----- table referees (Head Ref side) -----
     case 'callAck': {
       const R = store.refs, keys = msg.table != null ? [String(msg.table)] : Object.keys(R.calls);
-      for (const k of keys) if (R.calls[k] && !R.calls[k].ackAt) R.calls[k].ackAt = t;
+      for (const k of keys) { if (R.calls[k] && !R.calls[k].ackAt) R.calls[k].ackAt = t; chimeMem.delete(k); }
       save(); broadcastCalls(); return;
     }
     case 'refConfig': if (msg.confirm != null) store.refs.confirm = !!msg.confirm; if (msg.used != null) store.refs.used = !!msg.used; break;
     case 'refClear': store.refs.ready = {}; break;
+    case 'refRegen': {   // new keys for every table: old QR codes / bookmarks stop working right away
+      store.refs.keys = {}; refKeys();
+      for (const x of clients.values()) if (x.role === 'ref' && !x.refAll) x.send({ t: 'refLink', ok: false });
+      save(); broadcastRefKeys(); return;
+    }
     // ----- field break -----
     case 'endSession': {
       clearTimeout(autoSessionT);
@@ -472,7 +528,7 @@ async function runCommand(msg, c) {
       const pairs = (msg.pairs || []).map(p => ({ id: String(p.id || '').trim().slice(0, 12), tables: (p.tables || []).map(x => String(x).trim()).filter(Boolean).slice(0, 8) }))
         .filter(p => p.id && p.tables.length).slice(0, 12);
       if (!pairs.length) throw new Error('Layout needs at least one pair');
-      store.layout = { pairs }; save(); broadcastConfig(); return;
+      store.layout = { pairs }; save(); broadcastConfig(); broadcastRefKeys(); return;
     }
     // ----- sound -----
     case 'volume': {
@@ -512,7 +568,7 @@ function setSchedule(s, resetProgress) {
   if (same && prev.shiftedBy) { s.shiftedBy = prev.shiftedBy; s.matches.forEach(x => { if (x.time != null) x.time += prev.shiftedBy; }); }
   store.schedule = s;
   if (!same) { store.match.current = 0; store.match.live = null; store.match.actualStarts = {}; store.refs.ready = {}; }
-  save(); broadcast(scheduleMsg()); broadcastState();
+  save(); broadcast(scheduleMsg()); broadcastState(); broadcastRefKeys();
 }
 
 let nexusTimer = null;
@@ -620,9 +676,32 @@ const server = http.createServer((req, res) => {
   try { handleHttp(req, res); }
   catch (e) { console.error('  HTTP handler error:', e && e.stack || e); try { if (!res.headersSent) res.writeHead(500); res.end(); } catch (e2) {} }
 });
+// Live connections and the API only answer requests addressed to this laptop (an IP address, localhost, a LAN short name,
+// *.local, its own name or --allow-host), and a browser WebSocket must come from a page served by this same server.
+function hostName(h) { h = String(h || '').trim().toLowerCase(); if (h.startsWith('[')) return h.slice(1, h.indexOf(']')); return h.replace(/:\d+$/, ''); }
+function hostAllowed(req) {
+  const h = hostName(req.headers.host);
+  if (!h) return false;
+  if (net.isIP(h) || h === 'localhost' || h.endsWith('.localhost')) return true;
+  // Names without a dot (LAN / mDNS short names) and *.local can't be pointed at the laptop by an outside web site.
+  if (!h.includes('.') || h.endsWith('.local')) return true;
+  const me = os.hostname().toLowerCase();
+  return h === me || ALLOW_HOSTS.includes(h);
+}
+function originAllowed(req) {
+  const o = req.headers.origin; if (o === undefined) return true;   // not a browser page (scripts, tests)
+  let ou; try { ou = new URL(String(o)); } catch (e) { return false; }
+  return (ou.protocol === 'http:' || ou.protocol === 'https:') && ou.host.toLowerCase() === String(req.headers.host || '').toLowerCase();
+}
+let hostWarned = new Set();
+function refuseHost(req) {
+  const h = hostName(req.headers.host);
+  if (!hostWarned.has(h) && hostWarned.size < 20) { hostWarned.add(h); console.warn(`  Refused a request for host "${h}". If screens use that name, start with  --allow-host ${h || '<name>'}`); }
+}
 function handleHttp(req, res) {
   const u = parseUrl(req.url);
   if (!u) return badRequest(res, 'invalid URL');
+  if ((u.pathname.startsWith('/api/') || u.pathname.startsWith('/sounds/')) && !hostAllowed(req)) { refuseHost(req); return json(res, 403, { error: 'Unknown host' }); }
   if (u.pathname === '/api/info') return json(res, 200, { urls: lanUrls(), pinRequired: !!PIN, port: PORT });
   if (u.pathname === '/api/tables') return json(res, 200, { tables: allTables().sort((a, b) => a - b) });
   if (u.pathname === '/api/time') return json(res, 200, { s: now(), ...timer });
@@ -683,6 +762,7 @@ server.on('upgrade', (req, socket) => {
     const u = parseUrl(req.url);
     if (!u) { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); return; }
     if (u.pathname !== '/ws') return socket.destroy();
+    if (!hostAllowed(req) || !originAllowed(req)) { if (!hostAllowed(req)) refuseHost(req); socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return; }
     wsAccept(req, socket);
   } catch (e) { console.error('  WebSocket upgrade error:', e && e.message); try { socket.destroy(); } catch (e2) {} }
 });

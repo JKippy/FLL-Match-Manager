@@ -222,8 +222,9 @@
     <h2>Table referees <span class="r muted" id="refInfo"></span></h2>
     <div class="refgrid" id="refGrid"></div>
     <div class="row"><label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refConfirm" checked> Ask before START if a table in the match isn't READY</label>
-      <button id="refClear" title="Clear every READY mark">Clear READY marks</button></div>
-    <div class="hint">Each table referee opens their table's link on a phone (scan the code), taps <b>READY</b> when the table and team are set, and can tap <b>Call Head Ref</b>. The ready check starts once a referee page has been opened. No PIN needed on the referee page; it can only mark its own table and call you.</div>
+      <button id="refClear" title="Clear every READY mark">Clear READY marks</button>
+      <button id="refRegen" title="New referee links for every table; old QR codes and bookmarks stop working">Regenerate ref links</button></div>
+    <div class="hint">Each table referee opens their table's link on a phone (scan the code), taps <b>READY</b> when the table and team are set, and can tap <b>Call Head Ref</b>. The ready check starts once a referee page has been opened. No PIN needed on the referee page: the link has a key for its table, so a phone can only mark that table and call you. If a link gets shared too widely, use <b>Regenerate ref links</b> and have referees scan again.</div>
   </section>
 
   <section class="card">
@@ -604,18 +605,19 @@
   let refGridKey = '';
   function drawRefs() {
     const base = (urls[0] && urls[0].url) || location.origin, tabs = refTables();
-    const key = base + '|' + tabs.join(',');
+    const keys = FLL.refKeys || {};
+    const key = base + '|' + tabs.map(t => t + ':' + (keys[t] || '')).join(',');
     if (key !== refGridKey) {
       refGridKey = key;
       $('refGrid').innerHTML = tabs.map(t => {
-        const u = base + '/ref?table=' + encodeURIComponent(t); let svg = '';
+        const u = base + '/ref?table=' + encodeURIComponent(t) + (keys[t] ? '&k=' + encodeURIComponent(keys[t]) : ''); let svg = '';
         try { const qr = qrcode(0, 'M'); qr.addData(u); qr.make(); svg = qr.createSvgTag({ cellSize: 3, margin: 0, scalable: true }); } catch (e) {}
         return `<div class="rc" data-table="${esc(t)}"><div class="q">${svg}</div><a href="${esc(u)}" target="_blank">${esc(FLL.tableName(t))}</a><span class="st" id="refst-${esc(t)}"></span></div>`;
       }).join('') || '<div class="muted">Tables appear here once pairs or a schedule are set.</div>';
     }
     const st = FLL.state; if (!st) return;
     const r = st.refs || {}; $('refConfirm').checked = r.confirm !== false;
-    setText('refInfo', r.used ? 'referee pages in use · links: ' + base + '/ref?table=N' : 'not used yet · open ' + base + '/ref');
+    setText('refInfo', (r.used ? 'referee pages in use' : 'not used yet') + ' · each table\'s QR code is its referee link (it includes a key for that table)');
     for (const t of tabs) {
       const el = $('refst-' + t); if (!el) continue;
       const nx = FLL.nextForTable(t), call = FLL.calls[t] && !FLL.calls[t].ackAt;
@@ -623,7 +625,8 @@
       setText(el, txt); const c = 'st' + (call ? ' bad' : nx && !nx.live && FLL.isReady(nx.i, t) ? ' good' : ''); if (el.className !== c) el.className = c;
     }
   }
-  ['state', 'config', 'schedule', 'calls'].forEach(ev => FLL.on(ev, drawRefs));
+  ['state', 'config', 'schedule', 'calls', 'refKeys'].forEach(ev => FLL.on(ev, drawRefs));
+  $('refRegen').onclick = () => { if (confirm('Make new referee links for every table? Phones using the old QR codes or bookmarks must scan the new codes.')) FLL.cmd('refRegen'); };
   $('refConfirm').onchange = e => FLL.cmd('refConfig', { confirm: e.target.checked });
   $('refClear').onclick = () => FLL.cmd('refClear');
   // Call sound is a one-shot per call id: calls that existed before this page joined (reload, reconnect, late join) never ring.
