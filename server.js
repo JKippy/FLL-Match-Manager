@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const net = require('net');
 const crypto = require('crypto');
 const Sched = require('./lib/schedule');
 
@@ -20,6 +21,8 @@ const PORT = parseInt(arg('port', '8080'), 10);
 const PIN = String(arg('pin', '') || '');
 const START_LEAD_MS = parseInt(arg('lead', '600'), 10);
 const DATA_DIR = path.resolve(arg('data', path.join(__dirname, 'data')));
+// Extra host names screens may use to reach this laptop (besides IP addresses, localhost and this computer's name), comma separated.
+const ALLOW_HOSTS = String(arg('allow-host', '') || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
 const PUBLIC = path.join(__dirname, 'public');
 const SOUND_DIR = path.join(DATA_DIR, 'sounds');
 const CUES = ['start', 'warn', 'end', 'abort', 'call'];
@@ -262,6 +265,7 @@ function handleMessage(c, msg) {
       const reply = (ok, e) => msg.id != null ? c.send({ t: 'ack', id: msg.id, cmd: msg.cmd, ok, error: e ? String(e.message || e) : undefined, code: e && e.code, info: e && e.info })
         : (!ok && c.send({ t: 'error', error: String(e.message || e) }));
       // Table referees need no PIN: they can only mark their own table ready or call the Head Ref.
+      if (REF_CMDS.includes(msg.cmd) && !refRateOk(c)) { reply(false, new Error('Too many taps. Wait a moment and try again.')); return; }
       if (REF_CMDS.includes(msg.cmd)) { Promise.resolve().then(() => refCommand(msg, c)).then(() => reply(true), e => reply(false, e)); return; }
       if (c.role !== 'control' || !c.authed) { reply(false, new Error('Not authorized: enter the Head Ref PIN')); return; }
       Promise.resolve().then(() => runCommand(msg, c)).then(() => reply(true), e => reply(false, e));
@@ -270,6 +274,15 @@ function handleMessage(c, msg) {
 }
 
 const REF_CMDS = ['refReady', 'refCall', 'refCancel'];
+// Referee buttons need no PIN, so they are rate limited: 20 per 10 s per connection and 60 per 10 s per address.
+const refHits = new Map();
+function refRateOk(c) {
+  const t = now(), keys = ['s:' + c.id, 'ip:' + c.ip], lim = [20, 60];
+  for (let i = 0; i < 2; i++) { const a = (refHits.get(keys[i]) || []).filter(x => t - x < 10000); if (a.length >= lim[i]) { refHits.set(keys[i], a); return false; } refHits.set(keys[i], a); }
+  for (const k of keys) refHits.get(k).push(t);
+  if (refHits.size > 5000) for (const [k, a] of refHits) if (!a.length || t - a[a.length - 1] > 10000) refHits.delete(k);
+  return true;
+}
 // ---------- PIN brute-force protection ----------
 // 5 free tries, then a lockout that doubles (1 s, 2 s, 4 s … max 5 min), per socket AND per IP (a new socket doesn't reset it).
 // While locked out every attempt is refused without even comparing the PIN. A correct PIN clears the counter.
@@ -620,9 +633,32 @@ const server = http.createServer((req, res) => {
   try { handleHttp(req, res); }
   catch (e) { console.error('  HTTP handler error:', e && e.stack || e); try { if (!res.headersSent) res.writeHead(500); res.end(); } catch (e2) {} }
 });
+// Live connections and the API only answer requests addressed to this laptop (an IP address, localhost, a LAN short name,
+// *.local, its own name or --allow-host), and a browser WebSocket must come from a page served by this same server.
+function hostName(h) { h = String(h || '').trim().toLowerCase(); if (h.startsWith('[')) return h.slice(1, h.indexOf(']')); return h.replace(/:\d+$/, ''); }
+function hostAllowed(req) {
+  const h = hostName(req.headers.host);
+  if (!h) return false;
+  if (net.isIP(h) || h === 'localhost' || h.endsWith('.localhost')) return true;
+  // Names without a dot (LAN / mDNS short names) and *.local can't be pointed at the laptop by an outside web site.
+  if (!h.includes('.') || h.endsWith('.local')) return true;
+  const me = os.hostname().toLowerCase();
+  return h === me || ALLOW_HOSTS.includes(h);
+}
+function originAllowed(req) {
+  const o = req.headers.origin; if (o === undefined) return true;   // not a browser page (scripts, tests)
+  let ou; try { ou = new URL(String(o)); } catch (e) { return false; }
+  return (ou.protocol === 'http:' || ou.protocol === 'https:') && ou.host.toLowerCase() === String(req.headers.host || '').toLowerCase();
+}
+let hostWarned = new Set();
+function refuseHost(req) {
+  const h = hostName(req.headers.host);
+  if (!hostWarned.has(h) && hostWarned.size < 20) { hostWarned.add(h); console.warn(`  Refused a request for host "${h}". If screens use that name, start with  --allow-host ${h || '<name>'}`); }
+}
 function handleHttp(req, res) {
   const u = parseUrl(req.url);
   if (!u) return badRequest(res, 'invalid URL');
+  if ((u.pathname.startsWith('/api/') || u.pathname.startsWith('/sounds/')) && !hostAllowed(req)) { refuseHost(req); return json(res, 403, { error: 'Unknown host' }); }
   if (u.pathname === '/api/info') return json(res, 200, { urls: lanUrls(), pinRequired: !!PIN, port: PORT });
   if (u.pathname === '/api/tables') return json(res, 200, { tables: allTables().sort((a, b) => a - b) });
   if (u.pathname === '/api/time') return json(res, 200, { s: now(), ...timer });
@@ -683,6 +719,7 @@ server.on('upgrade', (req, socket) => {
     const u = parseUrl(req.url);
     if (!u) { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); return; }
     if (u.pathname !== '/ws') return socket.destroy();
+    if (!hostAllowed(req) || !originAllowed(req)) { if (!hostAllowed(req)) refuseHost(req); socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return; }
     wsAccept(req, socket);
   } catch (e) { console.error('  WebSocket upgrade error:', e && e.message); try { socket.destroy(); } catch (e2) {} }
 });
