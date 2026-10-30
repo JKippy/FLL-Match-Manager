@@ -96,7 +96,11 @@ The home page (`/`) has a *Table referee (phone)* link with a button per table (
 - **Call Head Ref** — the ref taps it (tap again to cancel). Control shows a sticky orange banner "Table 3 is calling the Head Ref" with **On my way ✓** and plays a gentle one-shot
   *Head Ref call* sound (Nature: marimba + thrush whistle + bell · Classic: ding-dong), using the control page's volume and the per-cue slider; it can be replaced by an upload like the other cues.
   Each call has an id, so the sound plays once and never again on reconnect or reload. The ref page shows "Head Ref called…" until acknowledged, then "✓ Head Ref is on the way".
-  Calls are **never** sent to audience screens.
+  Calls are **never** shown on audience screens.
+- **Call chime on the projector (v0.5.1)** — the main display (projector) also plays a soft two-bell chime when a ref calls, so the Head Ref knows to check the tablet.
+  It is **audio only** (nothing appears on the audience screen and the message carries no table), plays once per call id (never on reconnect, reload or late join),
+  and pair / queuing screens stay silent. Its own slider *Call chime on projector* (default 35 %, times master and the per-screen volume, so quieter than the match cues);
+  **▶ Projector** plays it on the projector(s) to set the level.
   A table that cancels and calls again within 30 s does not chime the projector again until *On my way ✓* is pressed.
 
 ## Match schedule
@@ -168,6 +172,20 @@ If your event has the official files (for example from your field kit / FTA / re
   (12-ping burst on connect, then every 2 s) and uses the median of the 5 lowest-round-trip samples.
 - Screens that join or reconnect mid-match get the current state and show the right time straight away. They never play the start sound late.
 
+## Reliability (v0.5.1)
+- **Dead links are noticed.** Each screen pings the server every second; with no reply for 2.5 s it shows *reconnecting…*, reconnects, and marks its state stale.
+  While stale it plays **no cues** (the match may have been paused). The server pings every 5 s and drops connections that have been silent for 20 s.
+- **Server down at 0:00.** If the server is stopped (or the device reports it is offline), screens keep counting from their last synced clock and play END once
+  (keyed by the run), with no second END after reconnecting. If the server restarts after a match ended while it was down, it finishes that match
+  (done, auto-advance if on, auto-break) exactly as if it had been running; an expired field break ends in the normal *match ready* state.
+- **Saved before it's acknowledged.** Every change is written to `data/state.json` (temp file + fsync + rename) before the control page sees *ok*.
+  A backup `state.json.bak` is kept; a damaged state.json is set aside as `state.json.corrupt-<time>`, the backup is loaded and the console shows a loud warning.
+- **PIN limits.** After a few wrong PINs the control page waits before the next try (the delay grows, up to 5 min); the page shows how long.
+- **◀ ▶ can't skip twice.** NEXT/PREV carry the match they were pressed on; a second press that arrives after the move is refused with a toast.
+- **Input limits.** Schedule files: 1 MB, 20 000 rows, 2 000 matches. Malformed requests get an error reply instead of affecting the server.
+- **Phones and tablets (iOS).** When a screen comes back (unlock, tab switch, focus) it re-requests the wake lock / restarts the keep-awake video, resumes audio
+  and checks the link. If the browser has suspended sound, a small *🔇 Tap to re-enable sound* pill appears; any tap fixes it. (Needs checking on a real iPhone.)
+
 ## Network setups (Head Ref keeps internet)
 
 The laptop running the server and all displays must be on the **same network**. Pick one:
@@ -212,7 +230,7 @@ Displays bookmark the laptop's IP, so make it stable: in the router's admin page
 - `lib/schedule.js`: Nexus conversion, CSV/paste parsing, pair mapping
 - `public/display.html`: all screen roles · `public/control.html`: Head Ref control · `public/ref.html`: table referee phone page · `public/sync.js`: clock sync, schedule helpers, sounds, keep-awake
 - `public/vendor/qrcode.js`: QR generator (MIT, Kazuhiko Arase), bundled so it works offline
-- `test/`: `unit.js` (schedule parsing), `sync-test.js` (timer sync), `event-test.js` (full event flow, live Nexus), `break-queue-test.js` (queuing screen + field breaks, using `public/sample-schedule-6tables.csv`), `v4-test.js` (one-shot sounds, refused-command messages, ahead confirm, match-ready after a break), `ref-test.js` (table referee page, READY, Call Head Ref). Run with `cd test && npm install && cd .. && npm run test:all` (needs Chrome; set `CHROME=` path). `webkit-click-test.js` holds a real mouse button down for 50–150 ms, 30 times per group, on START/PAUSE, the big time digits (including across a second change), reset / END BREAK, the break-end button, prev/next, the presets, and the ahead-of-schedule Yes/No buttons. Every click must change state as that control should. Every click except Cancel must also add a successful command acknowledgement; Cancel only closes the dialog and leaves the timer idle. Run it with `npm run test:webkit` after `npx --prefix test playwright-core install --with-deps webkit`. It is not part of `npm run test:all`: that suite drives the Chrome already on the machine, and WebKit is a separate browser download plus system libraries. `PWBROWSER=chromium` runs the same clicks in Chrome. `ROUNDS` (default 30) is the click count per group.
+- `test/`: `unit.js` (schedule parsing), `sync-test.js` (timer sync), `event-test.js` (full event flow, live Nexus), `break-queue-test.js` (queuing screen + field breaks, using `public/sample-schedule-6tables.csv`), `v4-test.js` (one-shot sounds, refused-command messages, ahead confirm, match-ready after a break), `ref-test.js` (table referee page, READY, Call Head Ref), `robust-test.js` (v0.5.1 reliability checks and the projector call chime). Run with `cd test && npm install && cd .. && npm run test:all` (needs Chrome; set `CHROME=` path). `webkit-click-test.js` holds a real mouse button down for 50–150 ms, 30 times per group, on START/PAUSE, the big time digits (including across a second change), reset / END BREAK, the break-end button, prev/next, the presets, and the ahead-of-schedule Yes/No buttons. Every click must change state as that control should. Every click except Cancel must also add a successful command acknowledgement; Cancel only closes the dialog and leaves the timer idle. Run it with `npm run test:webkit` after `npx --prefix test playwright-core install --with-deps webkit`. It is not part of `npm run test:all`: that suite drives the Chrome already on the machine, and WebKit is a separate browser download plus system libraries. `PWBROWSER=chromium` runs the same clicks in Chrome. `ROUNDS` (default 30) is the click count per group.
 
 ## Test results (headless Chrome on one box)
 - **Unit:** 11/11, including the 6-table sample CSV (24 matches, 9:30 start, team names, the 10:05→10:20 gap and lunch), covering Nexus wipws conversion (42 matches, 5-min spacing, A+B/C alternation), CSV round trip, pasted page table, long format, links.
