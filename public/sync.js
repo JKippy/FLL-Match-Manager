@@ -53,7 +53,7 @@
       // 'ahead' (too early) and 'notready' (a table referee hasn't tapped READY) both become a "Start anyway?" prompt.
       if ((r.code === 'ahead' || r.code === 'notready') && (this.listeners.ahead || []).length) this.emit('ahead', r); else this.emit('error', r.error);
     },
-    hello() { return this.send({ t: 'hello', role: this.role, view: this.view, name: this.name, pin: this.pin, deviceId: this.deviceId, ua: navigator.userAgent }); },
+    hello() { return this.send({ t: 'hello', role: this.role, view: this.view, name: this.name, pin: this.pin, deviceId: this.deviceId, ua: navigator.userAgent, table: this.table, key: this.key }); },
   };
 
   let cmdSeq = 0; const pending = new Map();
@@ -120,7 +120,9 @@
         if (S.role === 'display') S.send({ t: 'report', rtt: Math.round(S.rtt), offset: Math.round(S.offset), name: S.name, audio: Sound.enabled(), wake: S.wake || '' });
         break;
       }
-      case 'welcome': S.id = m.id; S.pinRequired = m.pinRequired; S.authed = m.authed; S.authError = m.error || ''; S.emit('status'); break;
+      case 'welcome': S.id = m.id; S.pinRequired = m.pinRequired; S.authed = m.authed; S.authError = m.error || ''; if (m.refOk !== undefined) S.refOk = m.refOk; S.emit('status'); break;
+      case 'refLink': S.refOk = !!m.ok; S.emit('status'); break;   // referee link replaced by the Head Ref
+      case 'refKeys': S.refKeys = m.keys || {}; S.emit('refKeys', S.refKeys); break;   // control page only (PIN)
       case 'auth': S.authed = m.authed; S.authError = m.error || ''; S.emit('auth', m.authed, m); S.emit('status'); break;
       case 'state': { const prev = S.state; S.state = m; if (S.stale) { S.stale = false; S.emit('status'); } S.emit('state', { prev, state: m }); break; }
       case 'config': S.config = m; Sound.applyConfig(m); S.emit('config', m); break;

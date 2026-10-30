@@ -77,8 +77,12 @@ so any layout works.
 
 ## Table referees (`/ref`) — READY and Call Head Ref
 
-Each table referee opens **`/ref?table=N`** on their phone (iPhone Safari / Android Chrome, no PIN). `/ref` alone shows a table picker.
-The home page (`/`) has a *Table referee (phone)* link with a button per table, and the control page has a **Table referees** card with a QR code + link per table
+Each table referee scans **their table's QR code** from the control page's **Table referees** card (iPhone Safari / Android Chrome, no PIN).
+The link is `/ref?table=N&k=…`: the key belongs to that table, so a phone can only mark READY or call the Head Ref for its own table.
+A link without the key (or an old one) opens read-only and asks the referee to scan again. **Regenerate ref links** on the card makes new keys
+(for example between events); phones on the old links are told to rescan. A phone that has signed in to `/control` with the PIN can use any table's page.
+`/ref` alone shows a table picker.
+The home page (`/`) has a *Table referee (phone)* link with a button per table (for the Head Ref's own phone), and the control page has a **Table referees** card with a QR code + link per table
 (tables come from the pairs setting; `/api/tables` lists them).
 
 - **The ref page** shows the table and pair, the match that uses this table now or next (match number, scheduled time, big team number and name), and the live clock or a countdown to it.
@@ -93,6 +97,7 @@ The home page (`/`) has a *Table referee (phone)* link with a button per table, 
   *Head Ref call* sound (Nature: marimba + thrush whistle + bell · Classic: ding-dong), using the control page's volume and the per-cue slider; it can be replaced by an upload like the other cues.
   Each call has an id, so the sound plays once and never again on reconnect or reload. The ref page shows "Head Ref called…" until acknowledged, then "✓ Head Ref is on the way".
   Calls are **never** sent to audience screens.
+  A table that cancels and calls again within 30 s does not chime the projector again until *On my way ✓* is pressed.
 
 ## Match schedule
 
