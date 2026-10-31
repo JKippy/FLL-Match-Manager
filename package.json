@@ -1,6 +1,6 @@
 {
   "name": "fll-synced-timer",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "LAN-synced FIRST LEGO League match timer with Nexus schedule, projector + table-pair screens, and one Head Referee control.",
   "main": "server.js",
   "bin": {
