@@ -262,12 +262,12 @@
     if (st.kind === 'break') return 'break';
     let cls = st.status;
     if (st.status === 'running' && r <= 30000) cls = 'warn';
-    if (st.status === 'running' && r <= 0) cls = 'done';
+    if (st.status === 'running' && r <= 0 && !FLL.isOffline()) cls = 'done';   // offline: hold at 0:00, never "ended" on our own (#54)
     return cls;
   }
   function bannerText(st, r) {
     if (st.kind === 'break') return 'Until ' + FLL.clock(st.breakUntil);
-    return st.status === 'paused' ? 'Paused' : (st.status === 'done' || (st.status === 'running' && r <= 0)) ? 'Time!' :
+    return st.status === 'paused' ? 'Paused' : (st.status === 'done' || (st.status === 'running' && r <= 0 && !FLL.isOffline())) ? 'Time!' :
       (st.status === 'running' && FLL.serverNow() < st.startAt) ? 'Get ready' : st.status === 'idle' ? 'Ready' : '';
   }
   const tablesOf = m => Object.keys(m.teams).sort((a, b) => a - b);

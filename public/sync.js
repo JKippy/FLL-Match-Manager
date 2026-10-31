@@ -17,6 +17,10 @@
     // haveClock: the clock offset has been measured at least once (it stays valid while disconnected).
     // stale: the link died without a close (heartbeat timeout), so the state we hold may be wrong: no cues until fresh state arrives.
     haveClock: false, stale: false,
+    // offline: the link dropped while the device itself reported no network (Wi-Fi off). The match may have been paused
+    // meanwhile, so the local clock keeps showing time but never plays END or shows "Time!" on its own (#54). Cleared by fresh state.
+    offline: false,
+    isOffline() { return this.offline || (!this.connected && navigator.onLine === false); },
     state: null, config: null, schedule: null, calls: {}, listeners: {},
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
     emit(ev, d, d2) { (this.listeners[ev] || []).forEach(f => { try { f(d, d2); } catch (e) { console.error(e); } }); },
@@ -99,15 +103,18 @@
       const r = { ok: false, cmd: p.cmd, error: 'Connection dropped: “' + label(p.cmd) + '” may not have gone through. Check the screen once reconnected, then tap again only if needed.' };
       S.refused(r); p.done(r);
     }
-    // The device itself reports it is offline (Wi-Fi dropped): the server is unreachable, not frozen, so the match most likely
-    // goes on. Trust the local clock like a clean close (END still plays once). Only a silent link on a "working" network is stale.
-    if (stale && navigator.onLine === false) stale = false;
+    // The device itself reports it is offline (Wi-Fi dropped): keep counting on the local clock (not stale, so the time stays on
+    // screen), but mark it offline: END is held at 0:00 until the server confirms (#54). Only a silent link on a "working" network is stale.
+    if (navigator.onLine === false) { S.offline = true; stale = false; }
     if (stale && !S.stale) console.warn('[FLL] no reply from the timer server for ' + HB_MS + ' ms: reconnecting, sounds paused until the state is fresh');
     if (stale) S.stale = true;
     S.connected = false; S.synced = false;
     S.emit('status'); retry();
   }
   S._lost = stale => S.ws && lost(S.ws, !!stale);   // test hook
+  // The device lost its network: until fresh state arrives, the server may have paused the match without us knowing (#54).
+  window.addEventListener('offline', () => { if (!S.connected && !S.offline) { S.offline = true; S.emit('status'); } });
+  window.addEventListener('online', () => S.checkLink());   // network back: reconnect now instead of waiting out the backoff
   function retry() { if (retryT) return; retryT = setTimeout(open, backoff); backoff = Math.min(5000, backoff * 1.6); }
   function ping() {
     clearTimeout(pingTimer);
@@ -138,7 +145,7 @@
       case 'refLink': S.refOk = !!m.ok; S.emit('status'); break;   // referee link replaced by the Head Ref
       case 'refKeys': S.refKeys = m.keys || {}; S.emit('refKeys', S.refKeys); break;   // control page only (PIN)
       case 'auth': S.authed = m.authed; S.authError = m.error || ''; S.emit('auth', m.authed, m); S.emit('status'); break;
-      case 'state': { const prev = S.state; S.state = m; if (S.stale) { S.stale = false; S.emit('status'); } S.emit('state', { prev, state: m }); break; }
+      case 'state': { const prev = S.state; S.state = m; if (S.stale || S.offline) { S.stale = false; S.offline = false; S.emit('status'); } S.emit('state', { prev, state: m }); break; }
       case 'config': S.config = m; Sound.applyConfig(m); S.emit('config', m); break;
       case 'schedule': S.schedule = m.schedule; S.emit('schedule', m.schedule); break;
       case 'play': Sound.play(m.cue, true); break;
@@ -424,12 +431,16 @@
   // Nothing is ever derived from "state looks like X", so rebroadcasts, match navigation, reconnects and late
   // joins never replay a sound. `onCue` can still veto (pair displays).
   // While the server is unreachable (socket closed) the local clock keeps going and END still fires once, keyed by runId,
-  // so it can't double-fire when the server comes back. While the state is STALE (heartbeat timeout, the match may have
+  // so it can't double-fire when the server comes back. Exception (#54): if the device itself is OFFLINE (no network), the
+  // match may have been paused meanwhile, so no cue driven by the local clock plays (START after a countdown, the 30 s warning,
+  // END). Crossings still advance `last`, so nothing fires late on reconnect; only END is held: it plays once if fresh state
+  // then says the run ended (within 10 s), and not at all if the server says paused / still running. Server-driven sounds
+  // (abort, Head Ref chime, test plays) are unchanged. While the state is STALE (heartbeat timeout, the match may have
   // been paused meanwhile) nothing fires; if END came due during a short stall, it is played once when the fresh "done"
   // state arrives within 2 s of the end (only for a run this page watched running, so a late join never replays it).
   S.cueWatcher = function (onCue) {
     let last = null, lastSeq = null, seenAbort;
-    const played = new Set(), watched = new Set();
+    const played = new Set(), watched = new Set(), held = new Set();
     const fire = (key, name) => { if (played.has(key)) return; played.add(key); onCue(name); };
     return function check() {
       const st = S.state; if (!st || S.stale || !S.haveClock) { last = null; return; }
@@ -442,7 +453,7 @@
         lastSeq = st.seq;
         if (st.status !== 'running') {
           if (st.status === 'done' && last != null && last > 0 && last < 1500) fire(run + ':end', 'end');
-          else if (st.status === 'done' && st.kind !== 'break' && watched.has(run) && st.match && st.match.endedAt && S.serverNow() - st.match.endedAt < 2000) fire(run + ':end', 'end');
+          else if (st.status === 'done' && st.kind !== 'break' && watched.has(run) && st.match && st.match.endedAt && S.serverNow() - st.match.endedAt < (held.has(run) ? 10000 : 2000)) fire(run + ':end', 'end');
           last = r; return;
         }
       }
@@ -450,9 +461,10 @@
       if (st.status === 'running' && last != null) {
         const dur = st.duration;
         const crossed = x => last > x && r <= x && last - r < 1500;
-        if (last >= dur && r < dur && (S.serverNow() - st.startAt) < 1500) fire(run + ':start', 'start');
-        if (dur > 30000 && crossed(30000)) fire(run + ':warn', 'warn');
-        if (crossed(0)) fire(run + ':end', 'end');
+        const quiet = S.isOffline();   // offline: the local clock may be wrong (paused meanwhile), so it plays nothing (#54)
+        if (!quiet && last >= dur && r < dur && (S.serverNow() - st.startAt) < 1500) fire(run + ':start', 'start');
+        if (!quiet && dur > 30000 && crossed(30000)) fire(run + ':warn', 'warn');
+        if (crossed(0)) { if (quiet) held.add(run); else fire(run + ':end', 'end'); }
       }
       last = r;
     };
