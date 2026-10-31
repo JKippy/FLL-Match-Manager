@@ -432,8 +432,10 @@
   // joins never replay a sound. `onCue` can still veto (pair displays).
   // While the server is unreachable (socket closed) the local clock keeps going and END still fires once, keyed by runId,
   // so it can't double-fire when the server comes back. Exception (#54): if the device itself is OFFLINE (no network), the
-  // match may have been paused meanwhile, so END is held at 0:00; it plays once only if fresh state then says the run ended
-  // (within 10 s), and not at all if the server says paused / still running. While the state is STALE (heartbeat timeout, the match may have
+  // match may have been paused meanwhile, so no cue driven by the local clock plays (START after a countdown, the 30 s warning,
+  // END). Crossings still advance `last`, so nothing fires late on reconnect; only END is held: it plays once if fresh state
+  // then says the run ended (within 10 s), and not at all if the server says paused / still running. Server-driven sounds
+  // (abort, Head Ref chime, test plays) are unchanged. While the state is STALE (heartbeat timeout, the match may have
   // been paused meanwhile) nothing fires; if END came due during a short stall, it is played once when the fresh "done"
   // state arrives within 2 s of the end (only for a run this page watched running, so a late join never replays it).
   S.cueWatcher = function (onCue) {
@@ -459,9 +461,10 @@
       if (st.status === 'running' && last != null) {
         const dur = st.duration;
         const crossed = x => last > x && r <= x && last - r < 1500;
-        if (last >= dur && r < dur && (S.serverNow() - st.startAt) < 1500) fire(run + ':start', 'start');
-        if (dur > 30000 && crossed(30000)) fire(run + ':warn', 'warn');
-        if (crossed(0)) { if (S.isOffline()) held.add(run); else fire(run + ':end', 'end'); }
+        const quiet = S.isOffline();   // offline: the local clock may be wrong (paused meanwhile), so it plays nothing (#54)
+        if (!quiet && last >= dur && r < dur && (S.serverNow() - st.startAt) < 1500) fire(run + ':start', 'start');
+        if (!quiet && dur > 30000 && crossed(30000)) fire(run + ':warn', 'warn');
+        if (crossed(0)) { if (quiet) held.add(run); else fire(run + ':end', 'end'); }
       }
       last = r;
     };

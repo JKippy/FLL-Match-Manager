@@ -1,6 +1,7 @@
 // Offline badge (FLL-004): a display that loses the timer server shows a small "OFFLINE – time may be off" badge in a
 // corner (not over the clock) while it is disconnected, and hides it again on reconnect.   node test/offline-badge-test.js
-// #54: a display whose device is offline (no network) holds at 0:00 without END; on reconnect the server state wins.
+// #54: a display whose device is offline (no network) plays no local-clock cue (no 30 s warning, holds at 0:00 without END);
+// on reconnect the server state wins and nothing plays late or twice.
 const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
@@ -105,6 +106,25 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await sleep(1500);
     v = await view();
     check('#54 server says ended: END plays exactly once', v.ends === 1, v);
+
+    // Offline past the 30 s mark while paused: no warning from the local clock, and no late warning on reconnect.
+    const warns = () => d.evaluate(() => window.__cues.filter(c => c.name === 'warn').length);
+    await cmd('reset'); await cmd('set', { duration: 36000, label: 'Match' }); await sleep(300);
+    await d.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true }); await sleep(500);
+    await dctx.setOffline(true);
+    check('#54 warn: display goes offline above 0:30', await waitFor(() => d.evaluate(() => !FLL.connected && FLL.offline), 6000) && (await d.evaluate(() => FLL.remaining())) > 31000, await view());
+    const pz2 = await cmd('pause');
+    check('#54 warn: match paused on the server above 0:30', pz2.ok && (await control.evaluate(() => FLL.state.remainingAtPause)) > 30000, pz2);
+    check('#54 warn: offline display counts past 0:30 locally', await waitFor(() => d.evaluate(() => FLL.remaining() < 29000), 8000), await view());
+    await sleep(500);
+    check('#54 warn: no 30 s warning sound while offline', (await warns()) === 0, await d.evaluate(() => window.__cues.map(c => c.name)));
+    await dctx.setOffline(false);
+    check('#54 warn: reconnects to the paused state', await waitFor(() => d.evaluate(() => FLL.connected && !FLL.offline && FLL.state.status === 'paused'), 10000));
+    await sleep(1500);
+    v = await view();
+    check('#54 warn: no late warning (or any cue) on reconnect, paused time shown', (await warns()) === 0 && v.status === 'paused' && /paused/i.test(v.banner) &&
+      (await d.evaluate(() => window.__cues.length)) === 0, { v, cues: await d.evaluate(() => window.__cues.map(c => c.name)) });
     await dctx.close();
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); if (srv && srv.exitCode == null) await stopServer();
