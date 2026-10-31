@@ -144,9 +144,13 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await control.check('#brkAuto');
     await control.fill('#queueCount', '3'); await control.dispatchEvent('#queueCount', 'change');
     await shift(2, Date.now()); await sleep(500);
-    await control.click('#startBtn'); await sleep(4800);
+    // Time the checks from the server's own start time, not a fixed sleep after the click: 'done' only lasts the 1 s
+    // auto delay, so a slow click or a busy machine used to land the check outside that window.
+    await control.click('#startBtn');
+    let r3 = await st(); for (let i = 0; i < 50 && !(r3.kind === 'match' && r3.status === 'running'); i++) { await sleep(100); r3 = await st(); }
+    await sleep(Math.max(0, r3.startAt + r3.duration - Date.now()) + 300);
     check('0:00 shown first (done)', (await st()).status === 'done');
-    await sleep(1800);
+    for (let i = 0; i < 40 && (await st()).kind !== 'break'; i++) await sleep(100);
     s = await st(); const m4 = await control.evaluate(() => FLL.schedule.matches[3].time);
     check('auto session → break until match 4 − 3 min (target changed to 3)', s.kind === 'break' && s.breakUntil === m4 - 180000, { kind: s.kind, d: s.breakUntil - m4 });
     q = await text(D.Q);

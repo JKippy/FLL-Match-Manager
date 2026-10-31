@@ -361,7 +361,9 @@
   $('brkAhead').onchange = e => FLL.cmd('breakConfig', { aheadMin: +e.target.value });
   $('brkMin').onchange = e => FLL.cmd('breakConfig', { minBreakSec: +e.target.value });
   $('brkDelay').onchange = e => FLL.cmd('breakConfig', { autoDelaySec: +e.target.value });
-  $('brkAuto').onchange = e => FLL.cmd('breakConfig', { auto: e.target.checked });
+  // Same as autoAdv: while our change waits for its ack, a state broadcast sent before it must not flip the box back.
+  let brkAutoPending = 0;
+  $('brkAuto').onchange = e => { const id = ++brkAutoPending; FLL.cmd('breakConfig', { auto: e.target.checked }).catch(() => {}).then(() => { if (brkAutoPending === id) { brkAutoPending = 0; if (FLL.config) applyBreakCfg(FLL.config); } }); };
   $('packSeg').onclick = e => { const b = e.target.closest('button'); if (b) FLL.cmd('soundPack', { pack: b.dataset.pack }); };
   $('themeSeg').onclick = e => { const b = e.target.closest('button'); if (b) FLL.cmd('displayConfig', { theme: b.dataset.theme }); };
   $('queueCount').onchange = e => FLL.cmd('displayConfig', { queueCount: +e.target.value });
@@ -370,7 +372,7 @@
     if (a !== $('brkAhead')) $('brkAhead').value = b.aheadMin;
     if (a !== $('brkMin')) $('brkMin').value = b.minBreakSec;
     if (a !== $('brkDelay')) $('brkDelay').value = b.autoDelaySec;
-    $('brkAuto').checked = !!b.auto;
+    if (!brkAutoPending) $('brkAuto').checked = !!b.auto;
     $('brkHint').textContent = `A field break ends ${b.aheadMin} min before the next match's scheduled time, and START asks to confirm if you're more than ${b.aheadMin} min ahead.`;
     [...$('packSeg').children].forEach(x => x.classList.toggle('on', x.dataset.pack === (c.sound.pack || 'nature')));
     const d = c.display || {};
