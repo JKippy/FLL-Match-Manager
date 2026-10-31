@@ -142,15 +142,15 @@
       const up = FLL.upcomingIdx(), upM = sch.matches[up];
       if (nx.live) { kicker = 'Match in progress'; kcls = 'kicker live'; clock = FLL.fmt(r) + (st.status === 'paused' ? ' · paused' : ''); ccls = 'clock live'; }
       else if (nx.i === up) {
-        kicker = brk ? 'Up next · field break' : (st.ready ? 'Starting soon' : 'Your match is next'); if (brk) kcls = 'kicker brk';
-        if (brk) { clock = 'Field break · ' + FLL.fmt(r); ccls = 'clock brk'; }
+        kicker = brk ? 'Up next · ' + FLL.breakName().toLowerCase() : (st.ready ? 'Starting soon' : 'Your match is next'); if (brk) kcls = 'kicker brk';
+        if (brk) { clock = FLL.breakName() + ' · ' + FLL.fmt(r); ccls = 'clock brk'; }
       } else {
         kicker = 'Your next match';
         const liveM = info && info.liveIdx != null ? info.list[info.liveIdx] : null;
         const other = liveM || upM;
         if (other) note = `${liveM ? 'Now playing' : 'Next on the field'}: <b>${esc(FLL.matchLabel(other))}</b> (${esc(FLL.pairsOf(other).map(p => 'Pair ' + p).join(' + ') || 'other tables')}). Your table plays after that.`;
         if (liveM) clock = 'Field: ' + FLL.fmt(r);
-        else if (brk) { clock = 'Field break · ' + FLL.fmt(r); ccls = 'clock brk'; }
+        else if (brk) { clock = FLL.breakName() + ' · ' + FLL.fmt(r); ccls = 'clock brk'; }
       }
     }
     setText('kicker', kicker); setClass('kicker', kcls);

@@ -61,7 +61,9 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('queue idle: Then = Match 2, should be queued = Match 3, 4', /Then Match 2\b/i.test(q) && /Should be queued.*Match 3\b.*Match 4\b/i.test(q) && !/Match 5\b/.test(q), q.slice(-260));
 
     // ---- full match 1 running: queue shows now playing, then abort ----
+    await control.evaluate(() => window.scrollTo(0, 0)); await sleep(200);
     await control.click('#startBtn'); await sleep(2500);
+    check('#60 START does not scroll the control page', (await control.evaluate(() => window.scrollY)) === 0, await control.evaluate(() => window.scrollY));
     q = await text(D.Q);
     check('queue during match 1: Now playing Match 1, Next Match 2, Then Match 3', /Now playing Match 1\b/i.test(q) && /Next Match 2\b/i.test(q) && /Then Match 3\b/i.test(q) && /Match 4\b/.test(q) && /Match 5\b/.test(q), q.slice(0, 240));
     check('queue screen plays no match sounds', (await D.Q.evaluate(() => window.__cues.length)) === 0);
@@ -91,6 +93,8 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('projector: FIELD BREAK + next match time + up next Match 2 teams', /Field break/i.test(mt) && /next match in \d+:\d\d/.test(mt) && /Match 2\b/.test(mt) && /79742/.test(mt), mt.slice(0, 200));
     check('pair C: up next Match 2 with break secondary', (await view(D.C)) === 'pair-upnext-break' && /Match 2\b/.test(await text(D.C)) && /FIELD BREAK/.test(await text(D.C)));
     check('pair A: up next Match 3 during break', (await view(D.A)) === 'pair-upnext-break' && /Match 3\b/.test(await text(D.A)) && /84288/.test(await text(D.A)));
+    check('#59 pair screens say "Next match on this field"; the projector keeps "Up next"', /Next match on this field/i.test(await text(D.A)) && /Next match on this field/i.test(await text(D.C)) &&
+      /Up next/i.test(mt) && !/on this field/i.test(mt), { A: (await text(D.A)).slice(0, 80), main: mt.slice(0, 80) });
     q = await text(D.Q);
     check('queue: Field break + remaining time, Next Match 2', /Field break/i.test(q) && /\d:\d\d/.test(q) && /Next Match 2\b/i.test(q), q.slice(0, 160));
     await D.main.screenshot({ path: path.join(SHOTS, 'v3_main_field_break.png') });
@@ -99,6 +103,28 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await D.Q.screenshot({ path: path.join(SHOTS, 'v3_queue_field_break.png') });
     await control.evaluate(() => window.scrollTo(0, 0));
     await control.screenshot({ path: path.join(SHOTS, 'v3_control_break_running.png') });
+    // ---- #62 Lunch label: every screen says Lunch, the break itself is unchanged ----
+    const b0 = await st();
+    await control.check('#brkLunch'); await sleep(900);
+    const b1 = await st(), lm = await text(D.main), lc = await text(D.C), lq = await text(D.Q);
+    check('#62 Lunch on: projector, pair and queue screens say Lunch instead of Field break', [lm, lc, lq].every(x => /lunch/i.test(x) && !/field break/i.test(x)), { lm: lm.slice(0, 100), lc: lc.slice(0, 100), lq: lq.slice(0, 100) });
+    check('#62 Lunch is a label only: same break, same end time', b1.lunch === true && b1.kind === 'break' && b1.status === 'running' && b1.breakUntil === b0.breakUntil && b1.startAt === b0.startAt && b1.duration === b0.duration);
+    check('#62 control status says lunch', /lunch/i.test(await control.textContent('#status')));
+    // ---- #61 tap one QR code: only it stays visible; tap again or wait restores all ----
+    await control.evaluate(() => { window.__QR_SOLO_MS = 1500; });
+    const qrVis = () => control.evaluate(() => [...document.querySelectorAll('#qr, #refGrid .rc .q')].filter(e => getComputedStyle(e).visibility === 'visible').map(e => e.id === 'qr' ? 'display' : e.closest('.rc').dataset.table));
+    const allQr = await qrVis();
+    await control.click('#refGrid .rc[data-table="3"] .q'); await sleep(200);
+    let qv = await qrVis();
+    check('#61 tapping table 3\'s QR hides every other QR code', allQr.length >= 4 && qv.length === 1 && qv[0] === '3', { allQr, qv });
+    await control.click('#refGrid .rc[data-table="3"] .q'); await sleep(200);
+    check('#61 tapping it again shows them all', (await qrVis()).length === allQr.length);
+    await control.click('#qr'); await sleep(200);
+    qv = await qrVis();
+    check('#61 tapping the screen QR shows only that one', qv.length === 1 && qv[0] === 'display', qv);
+    await sleep(1800);
+    check('#61 after the timeout all QR codes are back', (await qrVis()).length === allQr.length);
+    await control.evaluate(() => window.scrollTo(0, 0));
     check('control shows START MATCH / END BREAK during break', (await control.textContent('#startBtn')) === 'START MATCH' && (await control.textContent('#resetBtn')) === 'END BREAK');
     await sleep(1500);
     check('no sounds at all during the break', Object.values(await cueLog()).every(x => x === ''));
@@ -107,6 +133,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await control.click('#breakEndBtn'); await sleep(600);
     s = await st();
     check('End break → idle match timer, duration restored', s.kind === 'match' && s.status === 'idle' && s.duration === 4000);
+    check('#62 Lunch label clears when that break ends', s.lunch === false && !(await control.isChecked('#brkLunch')));
     check('pair C (plays match 2) goes to match-ready; pair A keeps up next', (await view(D.C)) === 'pair-ready' && (await view(D.A)) === 'pair-upnext');
 
     // ---- custom 6 s break runs out silently ----
