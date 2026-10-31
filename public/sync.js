@@ -40,7 +40,7 @@
     // Each tap gets one unique id (uid): the server applies a uid at most once and answers a repeat with the first ack.
     // Commands are never resent automatically. If the reply is lost we say so and let the Head Ref / referee check the screen.
     cmd(cmd, extra) {
-      const id = ++cmdSeq, uid = deviceId + '.' + PAGE + '.' + id;
+      const id = ++cmdSeq, uid = PAGE + '.' + id;
       return new Promise(resolve => {
         if (!this.send(Object.assign({ t: 'cmd', cmd, id, uid }, extra || {}))) {
           const r = { ok: false, cmd, error: 'Not connected to the timer server (reconnecting…). Check the Wi-Fi and try again.' };
@@ -59,7 +59,8 @@
   };
 
   let cmdSeq = 0; const pending = new Map();
-  const PAGE = Math.random().toString(36).slice(2, 8) + Date.now().toString(36);   // this page load: uids stay unique across reloads
+  // This page load's random tag (crypto, works on plain-HTTP LAN pages too): tap uids stay unique across devices and reloads.
+  const PAGE = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
   const LABELS = { start: 'START', pause: 'PAUSE', reset: 'RESET / ABORT', breakEnd: 'END BREAK', breakStart: 'START BREAK', goto: 'change match', refReady: 'READY', refCall: 'Call Head Ref', refCancel: 'Cancel call', callAck: 'acknowledge call' };
   const label = c => LABELS[c] || c;
   let pingTimer = null, burstLeft = 0, backoff = 500, retryT = null, openT = null;
