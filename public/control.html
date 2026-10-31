@@ -6,6 +6,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b0d10">
 <title>FLL Timer – Head Referee</title>
+<script>
+// Simple mode (#63): per device. A saved choice wins; with none saved, narrow screens (phones) get simple mode and wider ones the
+// full page. Set before the first paint so a phone never flashes the full page. localStorage can throw (private mode, storage off).
+(function () {
+  var NARROW = '(max-width: 760px)', saved = null;
+  try { saved = localStorage.getItem('fll.simple'); } catch (e) {}
+  var on = saved === '1' ? true : saved === '0' ? false : !!(window.matchMedia && window.matchMedia(NARROW).matches);
+  document.documentElement.classList.toggle('simple', on);
+  window.__SIMPLE_NARROW = NARROW;
+})();
+</script>
 <style>
   :root { --bg:#0b0d10; --card:#15181d; --line:#262a31; --fg:#e9edf2; --dim:#8a8f98; --run:#3ddc84; --warn:#ffc400; --end:#ff3b30; --blue:#4c8dff; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -97,6 +108,12 @@
   #pinModal button { width:100%; background:var(--run); color:#000; font-size:18px; padding:14px; }
   #err { color:var(--end); min-height:1.2em; font-size:14px; }
   .hidden { display:none !important; }
+  /* Simple mode (#63): only what a Head Ref needs mid-event. Anything marked .adv is hidden; new controls stay visible by default. */
+  html.simple .adv { display:none !important; }
+  html.simple .wrap { grid-template-columns:1fr; max-width:640px; }
+  #modeBtn { padding:6px 10px; font-size:13px; font-weight:700; background:#22262d; border:1px solid var(--line); white-space:nowrap; }
+  header { flex-wrap:wrap; }
+  html.simple header h1 { font-size:16px; }
   kbd { background:#22262d; border-radius:4px; padding:1px 5px; font-size:12px; }
   .dispvol { width:90px; vertical-align:middle; }
   /* table referees */
@@ -120,7 +137,8 @@
   <div id="callBanner" class="full" aria-live="assertive"></div>
   <header class="full">
     <h1>🏁 FLL Match Timer · Head Referee</h1>
-    <div class="sub"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
+    <div class="sub"><span class="dot" id="dot"></span><span id="conn">connecting…</span>
+      <button id="modeBtn" type="button" aria-pressed="false" title="Simple mode shows only the match controls. Saved on this device only.">Simple mode</button></div>
   </header>
 
   <section class="card">
@@ -142,13 +160,13 @@
       <button id="startBtn">START</button>
       <button id="resetBtn">RESET</button>
     </div>
-    <div class="presets" id="presets">
+    <div class="presets adv" id="presets">
       <button data-ms="150000" data-label="Match">2:30 Match</button>
       <button data-ms="120000" data-label="Setup">2:00</button>
       <button data-ms="60000" data-label="Timer">1:00</button>
       <button data-ms="300000" data-label="Timer">5:00</button>
     </div>
-    <div class="row">
+    <div class="row adv">
       <input id="customTime" class="grow" inputmode="numeric" placeholder="Custom m:ss (e.g. 3:00)">
       <button class="pri" id="setCustom">Set</button>
     </div>
@@ -160,26 +178,26 @@
         <input id="breakLen" style="width:96px" placeholder="m:ss" inputmode="numeric"><button id="breakCustom">Break</button>
         <button id="breakEndBtn" class="hidden">End break</button>
       </div>
-      <div class="row">
+      <div class="row adv">
         <label>Target: start matches up to <input type="number" id="brkAhead" step="0.5" min="0" max="30"> min ahead of schedule</label>
       </div>
-      <div class="hint" id="brkHint" style="margin-top:4px"></div>
+      <div class="hint adv" id="brkHint" style="margin-top:4px"></div>
       <div class="row">
         <label title="Label only: the break's timing and silence don't change. Goes back to 'Field break' when this break ends."><input type="checkbox" id="brkLunch"> Call this break <b>Lunch</b> on every screen</label>
       </div>
-      <div class="row">
+      <div class="row adv">
         <label><input type="checkbox" id="brkAuto"> End match session automatically <input type="number" id="brkDelay" min="0" max="120" step="1"> s after 0:00</label>
       </div>
-      <details><summary>Advanced</summary>
+      <details class="adv"><summary>Advanced</summary>
         <div class="row"><label>Don't bother showing a break shorter than <input type="number" id="brkMin" step="5" min="0" max="1800"> s</label></div>
         <div class="hint">If the break would be shorter than this, the screens skip it and go straight to the next match.</div>
       </details>
     </div>
-    <div class="hint"><kbd>Space</kbd> start / pause · <kbd>R</kbd> reset (abort plays the foghorn) · <kbd>←</kbd>/<kbd>→</kbd> previous / next match. Displays start together ~0.6 s after START.
+    <div class="hint adv"><kbd>Space</kbd> start / pause · <kbd>R</kbd> reset (abort plays the foghorn) · <kbd>←</kbd>/<kbd>→</kbd> previous / next match. Displays start together ~0.6 s after START.
       <label style="display:inline-flex;gap:6px;align-items:center;margin-left:6px"><input type="checkbox" id="autoAdv" checked> auto-advance after each match</label></div>
   </section>
 
-  <section class="card">
+  <section class="card adv">
     <h2>Connected displays <span class="r" id="count">0</span></h2>
     <div style="overflow:auto">
     <table>
@@ -190,7 +208,7 @@
     <div class="hint">Volume here overrides one screen (e.g. projector loud, table screens quiet). 🔇 mutes it. ▶ plays a test chime on just that screen.</div>
   </section>
 
-  <section class="card full">
+  <section class="card full adv">
     <h2>Match schedule <span class="r muted" id="schedInfo">No schedule loaded</span></h2>
     <div class="schedwarn" id="schedWarn" role="alert" hidden></div>
     <div class="row" style="margin-top:0">
@@ -220,14 +238,14 @@
     <div class="sched" style="margin-top:10px"><table id="schedTable"><tbody><tr><td class="muted">Load a schedule to see matches here.</td></tr></tbody></table></div>
   </section>
 
-  <section class="card">
+  <section class="card adv">
     <h2>Sounds &amp; volume <span class="r"><span class="seg" id="packSeg"><button data-pack="nature">🌿 Nature</button><button data-pack="classic">Classic</button></span></span></h2>
     <div class="vol" id="volGrid"></div>
     <div class="hint"><b>Nature</b> (default): gentle marimba + birdsong start, wind chimes at 0:30, bell trio + ocean swell at 0:00, soft descending tones on abort. <b>Classic</b>: FIRST-style charge, whistle, buzzer, foghorn. Field breaks never make a sound.
       FIRST doesn't publish its field sounds, so both packs are synthesized. Upload your own (mp3/wav/m4a/ogg, ≤ 8 MB) per cue; the files are stored on the laptop and sent to every screen. “Test” plays on all screens, “Here” only on this device.</div>
   </section>
 
-  <section class="card full" id="refCard">
+  <section class="card full adv" id="refCard">
     <h2>Table referees <span class="r muted" id="refInfo"></span></h2>
     <div class="refgrid" id="refGrid"></div>
     <div class="row"><label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="refConfirm" checked> Ask before START if a table in the match isn't READY</label>
@@ -236,7 +254,7 @@
     <div class="hint">Each table referee opens their table's link on a phone (scan the code), taps <b>READY</b> when the table and team are set, and can tap <b>Call Head Ref</b>. The ready check starts once a referee page has been opened. No PIN needed on the referee page: the link has a key for its table, so a phone can only mark that table and call you. If a link gets shared too widely, use <b>Regenerate ref links</b> and have referees scan again.</div>
   </section>
 
-  <section class="card">
+  <section class="card adv">
     <h2>Table pairs</h2>
     <div class="pairs" id="pairsEd"></div>
     <div class="row"><button id="addPair">+ Pair</button><button class="pri" id="savePairs">Save pairs</button></div>
@@ -301,6 +319,29 @@
   FLL.on('auth', (ok, m) => { if (ok) localStorage.setItem('fll.pin', $('pinInput').value); else $('err').textContent = (m && m.error) || 'Wrong PIN'; });
   $('pinBtn').onclick = () => { FLL.pin = $('pinInput').value; FLL.send({ t: 'auth', pin: FLL.pin }); };
   $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('pinBtn').click(); });
+
+  // ----- simple mode (#63) -----
+  // The toggle saves a choice for this device; until then the page follows the screen width (e.g. a phone rotated to landscape).
+  const isSimple = () => document.documentElement.classList.contains('simple');
+  function paintMode() {
+    const on = isSimple(), b = $('modeBtn');
+    setText(b, on ? 'Show all controls' : 'Simple mode');
+    b.setAttribute('aria-pressed', String(on));
+  }
+  $('modeBtn').onclick = () => {
+    const on = !isSimple();
+    document.documentElement.classList.toggle('simple', on);
+    try { localStorage.setItem('fll.simple', on ? '1' : '0'); } catch (e) {}
+    paintMode();
+  };
+  if (window.matchMedia) {
+    const mq = window.matchMedia(window.__SIMPLE_NARROW), follow = () => {
+      let saved = null; try { saved = localStorage.getItem('fll.simple'); } catch (e) {}
+      if (saved == null) { document.documentElement.classList.toggle('simple', mq.matches); paintMode(); }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', follow); else if (mq.addListener) mq.addListener(follow);   // old Safari
+  }
+  paintMode();
 
   // ----- timer controls -----
   // START/PAUSE sends what the button showed when it was last painted, not what the live state says at tap time: the new
