@@ -1,6 +1,6 @@
 // End-to-end sync test: 1 control + 3 displays (with fake clock skew and random network delay) + a late joiner.
 // Usage: (cd test && npm install) && node test/sync-test.js
-const { chromium } = require('playwright-core');
+const { launchBrowser } = require('./launch');
 const { spawn } = require('child_process');
 const path = require('path');
 const PORT = 8099, PIN = '2468', BASE = `http://127.0.0.1:${PORT}`;
@@ -13,7 +13,7 @@ const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), '--port', PORT, '--pin', PIN, '--data', DATA], { stdio: ['ignore', 'pipe', 'inherit'] });
   let out = ''; srv.stdout.on('data', d => out += d);
   await sleep(700);
-  const browser = await chromium.launch({ executablePath: CHROME, args: ['--autoplay-policy=no-user-gesture-required'] });
+  const browser = await launchBrowser({ executablePath: CHROME, args: ['--autoplay-policy=no-user-gesture-required'] });
   const results = {};
   try {
     const mk = async (opts, url, init) => {

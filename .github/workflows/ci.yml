@@ -91,3 +91,47 @@ jobs:
           name: webkit-clicks
           path: test-output/screenshots/webkit-clicks-*.json
           if-no-files-found: ignore
+
+  # Display / satellite screens (projector, pairs, queue, timer), plus simple mode
+  # because test:all runs it. The rest of test:all stays on the Chrome job.
+  firefox:
+    name: test (Node 22, Firefox)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/package-lock.json
+
+      - name: Install test dependencies
+        run: npm ci --prefix test
+
+      - name: Cache Playwright Firefox
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-firefox-${{ hashFiles('test/package-lock.json') }}
+
+      - name: Install Firefox and system dependencies
+        working-directory: test
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: npx playwright-core install --with-deps --no-progress firefox
+
+      - name: Run Firefox quick tier
+        env:
+          PWBROWSER: firefox
+          SYNC_MAX_SPREAD_MS: '60'
+        run: npm run test:firefox
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-screenshots
+          path: test-output/screenshots/
+          if-no-files-found: ignore

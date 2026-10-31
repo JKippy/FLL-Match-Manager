@@ -19,7 +19,8 @@
     "test:losttap": "node test/lost-tap-test.js",
     "test:offline": "node test/offline-badge-test.js",
     "test:simple": "node test/simple-mode-test.js",
-    "test:webkit": "node test/webkit-click-test.js"
+    "test:webkit": "node test/webkit-click-test.js",
+    "test:firefox": "node test/firefox-suite.js"
   },
   "engines": {
     "node": ">=18"
