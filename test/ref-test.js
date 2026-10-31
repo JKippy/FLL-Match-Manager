@@ -74,6 +74,8 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
 
     // ---------- READY toggle + broadcast ----------
     await R['1'].tap('#readyBtn'); await sleep(500);
+    { const wk = await R['1'].evaluate(() => ({ wake: FLL.wake || '', video: [...document.querySelectorAll('video')].some(v => !v.paused) }));
+      check('ref page keeps the phone screen awake after the first tap', (!!wk.wake && wk.wake !== 'none') || wk.video, wk); }
     check('tap READY: server state + control see T1 ready for Match 1', (await readyOf(0)) === '1' && (await rs(R['1'])).ready === true);
     check('ref T1: button shows ✓ READY', /✓ READY/.test(await R['1'].evaluate(() => document.getElementById('readyBtn').textContent)));
     await R['1'].screenshot({ path: path.join(SHOTS, 'v5_ref_phone_ready.png') });

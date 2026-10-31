@@ -85,6 +85,7 @@ A link without the key (or an old one) opens read-only and asks the referee to s
 The home page (`/`) has a *Table referee (phone)* link with a button per table (for the Head Ref's own phone), and the control page has a **Table referees** card with a QR code + link per table
 (tables come from the pairs setting; `/api/tables` lists them).
 
+- **Screen stays on** — after the first tap anywhere, the ref page keeps the phone screen awake (wake lock on https/localhost, otherwise a tiny muted video), and re-arms it when the phone is unlocked or the tab comes back.
 - **The ref page** shows the table and pair, the match that uses this table now or next (match number, scheduled time, big team number and name), and the live clock or a countdown to it.
 - **READY** — a big toggle for *that table in that match*. The server holds the state, so every screen sees it, and it survives reloads and reconnects. Pair C refs can ready up while A+B are still playing, because marks belong to the match.
   It is locked while the match runs and after it is over.
