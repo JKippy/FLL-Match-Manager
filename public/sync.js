@@ -442,12 +442,14 @@
     let last = null, lastSeq = null, seenAbort;
     const played = new Set(), watched = new Set(), held = new Set();
     const fire = (key, name) => { if (played.has(key)) return; played.add(key); onCue(name); };
-    return function check() {
+    // frameR (optional): the remaining time the caller just painted. Using that same value (not a fresh read a few ms later)
+    // means a cue can only fire on the frame that shows its moment: END on 0:00, the warning on 0:30 (#56).
+    return function check(frameR) {
       const st = S.state; if (!st || S.stale || !S.haveClock) { last = null; return; }
       const aid = st.abortId || 0;
       if (seenAbort === undefined) seenAbort = aid;              // whatever happened before we joined is history
       else if (aid !== seenAbort) { seenAbort = aid; if (st.abortAt && S.serverNow() - st.abortAt < 3000) fire('abort:' + aid, 'abort'); }
-      const r = S.remaining(), run = st.runId || 0;
+      const r = typeof frameR === 'number' ? frameR : S.remaining(), run = st.runId || 0;
       if (st.kind === 'break') { lastSeq = st.seq; last = Infinity; return; }   // field breaks are silent
       if (st.seq !== lastSeq) {
         lastSeq = st.seq;

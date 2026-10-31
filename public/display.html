@@ -255,7 +255,8 @@
   // (no paint to wait for, and background timers can be throttled).
   const cue = FLL.cueWatcher(n => {
     if (!involved()) return;
-    const c = { name: n, at: FLL.perfNow() }; window.__cues.push(c);
+    const t0 = document.getElementById('time');
+    const c = { name: n, at: FLL.perfNow(), painted: t0 ? t0.textContent : null }; window.__cues.push(c);
     const play = () => { const t = document.getElementById('time'); c.shown = t ? t.textContent : null; c.playAt = FLL.perfNow(); FLLSound.play(n); };
     if (document.hidden) play(); else setTimeout(play, 0);
     if (n === 'end') { document.body.classList.remove('flash-end'); void document.body.offsetWidth; document.body.classList.add('flash-end'); }
@@ -320,9 +321,9 @@
   function setMain(html, view) { if (html !== lastHTML) { $('main').innerHTML = html; lastHTML = html; } window.__view = view; }
 
   function render() {
-    const st = FLL.state;
+    const st = FLL.state; let frameR;
     if (st && (st.status !== 'running' || FLL.samples.length)) {   // never show a running time before the clock is synced
-      const r = FLL.remaining();
+      const r = frameR = FLL.remaining();   // read once per frame: the paint and the cue check use the same value (#56)
       const text = FLL.fmt(r);
       if (text !== lastText) { window.__transitions.push({ text, at: FLL.perfNow(), status: st.status }); lastText = text; }
       const cls = timerClass(st, r) + (text.length > 4 ? ' long' : '');
@@ -407,7 +408,7 @@
         setMain(`${brk ? '<div class="brkpill">Field break</div>' : ''}<div class="time bigtime ${cls}" id="time">${text}</div><div class="banner">${bannerText(st, r)}</div>`, brk ? 'timer-break' : 'timer');
       }
     }
-    cue();   // after the clock is written, so a cue never delays the digits (#56)
+    cue(frameR);   // after the clock is written, with the value just painted, so a cue never delays the digits (#56)
     requestAnimationFrame(render);
   }
   requestAnimationFrame(render);
