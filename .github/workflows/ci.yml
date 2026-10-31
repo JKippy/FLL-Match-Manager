@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: screenshots/
+          path: test-output/screenshots/
           if-no-files-found: ignore
 
   # Separate from test:all. playwright-core does not download a browser, and
@@ -89,5 +89,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: webkit-clicks
-          path: screenshots/webkit-clicks-*.json
+          path: test-output/screenshots/webkit-clicks-*.json
           if-no-files-found: ignore

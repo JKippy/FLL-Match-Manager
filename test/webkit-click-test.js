@@ -16,7 +16,7 @@ const TAP_GUARD_MS = 700;
 const BROWSER = process.env.PWBROWSER || 'webkit';
 const PIN = '4321';
 const SAMPLE = path.join(__dirname, '..', 'public', 'sample-schedule-6tables.csv');
-const SHOTS = path.join(__dirname, '..', 'screenshots');
+const { OUT: SHOTS } = require('./shots');   // report goes to test-output/screenshots (never tracked)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hold = () => 50 + Math.random() * 100;
 let failed = 0, passed = 0;

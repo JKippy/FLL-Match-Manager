@@ -4,7 +4,7 @@ const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const PORT = 8098, PIN = '4321', BASE = `http://127.0.0.1:${PORT}`;
-const SHOTS = path.join(__dirname, '..', 'screenshots');
+const { SHOTS } = require('./shots');   // test-output/screenshots unless --update
 const SAMPLE = path.join(__dirname, '..', 'public', 'sample-schedule-6tables.csv');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failed = 0, passed = 0;
