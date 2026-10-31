@@ -126,6 +126,31 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     v = await view();
     check('#54 warn: no late warning (or any cue) on reconnect, paused time shown', (await warns()) === 0 && v.status === 'paused' && /paused/i.test(v.banner) &&
       (await d.evaluate(() => window.__cues.length)) === 0, { v, cues: await d.evaluate(() => window.__cues.map(c => c.name)) });
+
+    // #56: the clock is painted before the END sound is played: the screen already reads 0:00 when the sound starts.
+    await cmd('reset'); await cmd('set', { duration: 2000, label: 'Match' }); await sleep(300);
+    await d.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true });
+    await waitFor(() => d.evaluate(() => window.__cues.some(c => c.name === 'end' && c.playAt)), 6000);
+    const endCue = await d.evaluate(() => window.__cues.find(c => c.name === 'end'));
+    check('#56 clock reads 0:00 when the END sound is played', !!endCue && endCue.shown === '0:00', endCue);
+
+    // #56 race under load: a second remaining() read in the same frame sees a later time (simulated +400 ms). The cue check must
+    // use the value the frame painted, so END and the 30 s warning still fire only on the frames that show 0:00 / 0:30, once each.
+    await d.evaluate(() => {
+      const orig = FLL.remaining.bind(FLL); let calls = 0;
+      (function tick() { calls = 0; requestAnimationFrame(tick); })();
+      FLL.remaining = () => { const v = orig(); return calls++ && v != null ? Math.max(0, v - 400) : v; };
+    });
+    await cmd('reset'); await cmd('set', { duration: 31500, label: 'Match' }); await sleep(300);
+    await d.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true });
+    await waitFor(() => d.evaluate(() => window.__cues.some(c => c.name === 'end' && c.playAt)), 40000);
+    await sleep(500);
+    const lag = await d.evaluate(() => window.__cues.map(c => ({ name: c.name, painted: c.painted, shown: c.shown })));
+    const one = n => lag.filter(c => c.name === n);
+    check('#56 late read: END fires on the 0:00 frame, once', one('end').length === 1 && one('end')[0].painted === '0:00' && one('end')[0].shown === '0:00', lag);
+    check('#56 late read: 30 s warning fires on the 0:30 frame, once', one('warn').length === 1 && one('warn')[0].painted === '0:30', lag);
     await dctx.close();
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); if (srv && srv.exitCode == null) await stopServer();
