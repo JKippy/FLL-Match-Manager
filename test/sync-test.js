@@ -142,6 +142,15 @@ const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
   // a busy shared CI runner sometimes adds a third frame (50.x ms). CI sets SYNC_MAX_SPREAD_MS=60; local runs keep 50.
   const maxSpread = Number(process.env.SYNC_MAX_SPREAD_MS) || 50;
   results.maxSpreadLimitMs = maxSpread;
-  const ok = results.maxSpreadMs < maxSpread && results.pause && results.pause.sameAfter1_5s && results.spectatorCmdBlocked && results.wrongPinRejected;
+  // Each display's clock offset estimate must stay close to the true offset, so a real clock slip can't hide under the
+  // wider CI spread limit (#41). Limit 45 ms locally, 60 ms on CI; SYNC_MAX_OFFSET_MS overrides both.
+  const maxOffset = Number(process.env.SYNC_MAX_OFFSET_MS) || (process.env.CI ? 60 : 45);
+  const offErrs = Object.values(results.offsetErrorsMs || {});
+  results.maxOffsetErrMs = offErrs.length ? Math.max(...offErrs.map(Math.abs)) : null;
+  results.maxOffsetLimitMs = maxOffset;
+  const offsetOk = offErrs.length > 0 && offErrs.every(v => Number.isFinite(v) && Math.abs(v) < maxOffset);
+  if (!offsetOk) console.log(`offset error too large: ${JSON.stringify(results.offsetErrorsMs)} (limit ${maxOffset} ms)`);
+  else console.log(`max |offset error| ${results.maxOffsetErrMs} ms (limit ${maxOffset} ms), max spread ${results.maxSpreadMs} ms (limit ${maxSpread} ms)`);
+  const ok = offsetOk && results.maxSpreadMs < maxSpread && results.pause && results.pause.sameAfter1_5s && results.spectatorCmdBlocked && results.wrongPinRejected;
   console.log(ok ? '\nPASS' : '\nFAIL'); process.exit(ok ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });
