@@ -114,4 +114,12 @@ t('CSV round trip keeps Nexus and sample-schedule names', () => {
   assert.deepStrictEqual(q.teamNames, p.teamNames);
   assert.deepStrictEqual(q.matches.map(m => m.teams), p.matches.map(m => m.teams));
 });
+t('CSV export writes a line break inside a team name as one space, so re-import keeps the team', () => {
+  const sched = { teamNames: { '1003': 'Bio\nGlow', '1004': 'Two\r\nLines\rHere' }, matches: [{ n: 1, time: null, teams: { '1': '1003', '2': '1004' } }] };
+  const out = S.toCSV(sched);
+  assert.strictEqual(out.split('\n').filter(Boolean).length, 2, out);   // header + one match row
+  const q = S.parseCSV(out, { date: '2026-11-14' });
+  assert.deepStrictEqual(q.matches.map(m => m.teams), [{ '1': '1003', '2': '1004' }]);
+  assert.deepStrictEqual(q.teamNames, { '1003': 'Bio Glow', '1004': 'Two Lines Here' });
+});
 console.log(`\n${pass} unit tests passed`);
