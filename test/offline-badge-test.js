@@ -119,6 +119,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('#54 warn: offline display counts past 0:30 locally', await waitFor(() => d.evaluate(() => FLL.remaining() < 29000), 8000), await view());
     await sleep(500);
     check('#54 warn: no 30 s warning sound while offline', (await warns()) === 0, await d.evaluate(() => window.__cues.map(c => c.name)));
+    await d.evaluate(() => { window.__cues = []; });   // START played live (online) before the drop; count only what plays from here on
     await dctx.setOffline(false);
     check('#54 warn: reconnects to the paused state', await waitFor(() => d.evaluate(() => FLL.connected && !FLL.offline && FLL.state.status === 'paused'), 10000));
     await sleep(1500);
