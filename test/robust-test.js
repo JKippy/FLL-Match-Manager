@@ -230,6 +230,14 @@ function req(method, p, headers, body) {
     const s4 = await st();
     check('schedule restored from the backup', s4 && (await control.evaluate(() => FLL.schedule && FLL.schedule.matches.length)) === 24);
 
+    // ---------- CSV import that drops teams says so on the control page ----------
+    const lossy = await cmd('scheduleCSV', { text: 'Match,Time,Table 1,Red,Table 2\n1,9:30,111,222,333\n2,9:35,444,555,666\n', name: 'lossy' });
+    await waitFor(() => control.evaluate(() => !document.getElementById('schedWarn').hidden), 3000);
+    const w = await control.evaluate(() => ({ hidden: document.getElementById('schedWarn').hidden, text: document.getElementById('schedWarn').textContent, toast: document.getElementById('toast').textContent }));
+    check('CSV import that drops teams shows a warning with the count and the teams', lossy.ok && !w.hidden && /2 teams were dropped/.test(w.text) && /team 222/.test(w.text) && /team 555/.test(w.text) && /dropped/.test(w.toast), w);
+    await cmd('scheduleCSV', { text: fs.readFileSync(SAMPLE, 'utf8'), name: 'clean' }); await sleep(400);
+    check('the warning clears after a clean schedule load', await control.evaluate(() => document.getElementById('schedWarn').hidden));
+
     // ---------- automatic field break ends on its own ----------
     const pad = n => String(n).padStart(2, '0'), iso = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
     const tb = Date.now();

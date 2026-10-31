@@ -53,6 +53,8 @@
   td { padding:6px 4px; border-bottom:1px solid #1d2026; font-variant-numeric:tabular-nums; vertical-align:middle; }
   td.n { font-weight:700; } .muted { color:var(--dim); } .good { color:var(--run); } .bad { color:var(--end); } .meh { color:var(--warn); }
   .hint { color:var(--dim); font-size:12.5px; margin-top:8px; }
+  .schedwarn { background:#4a2a00; border:1px solid #ffb020; color:#ffd27a; border-radius:8px; padding:8px 10px; margin:4px 0 8px; font-size:13.5px; }
+  .schedwarn[hidden] { display:none; }
   .pill { padding:2px 10px; border-radius:999px; font-weight:800; font-size:13px; }
   .pill.ok { background:rgba(61,220,132,.16); color:var(--run); } .pill.meh { background:rgba(255,196,0,.16); color:var(--warn); } .pill.bad { background:rgba(255,59,48,.18); color:var(--end); }
   .matchbar { display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
@@ -184,6 +186,7 @@
 
   <section class="card full">
     <h2>Match schedule <span class="r muted" id="schedInfo">No schedule loaded</span></h2>
+    <div class="schedwarn" id="schedWarn" role="alert" hidden></div>
     <div class="row" style="margin-top:0">
       <input id="nexusUrl" class="grow" placeholder="Nexus event link, e.g. https://fll.nexus/fll/mm26">
       <button class="pri" id="nexusBtn">Fetch from Nexus</button>
@@ -451,8 +454,19 @@
 
   // ----- schedule table -----
   function shiftTxt(ms) { const m = Math.round(Math.abs(ms) / 60000), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mi = m % 60; return (ms < 0 ? '−' : '+') + [d && d + ' d', h && h + ' h', (mi || !(d || h)) && mi + ' min'].filter(Boolean).join(' '); }
+  // CSV import dropped teams (two columns landed on the same table): say so until the next schedule load.
+  let schedWarnTxt = null;
+  function renderSchedWarn(sch) {
+    const d = sch && sch.dropped && sch.dropped.length ? sch.dropped : null;
+    const txt = d ? `⚠ ${d.length} team${d.length === 1 ? ' was' : 's were'} dropped while reading this schedule, because two columns map to the same table: ` +
+      d.slice(0, 8).map(x => `team ${x.team} (row ${x.row}, table ${x.table}, replaced by ${x.keptTeam})`).join(', ') + (d.length > 8 ? `, and ${d.length - 8} more` : '') +
+      '. Check the column headers (use "Table 1", "Table 2", …) and load the file again.' : '';
+    if (txt === schedWarnTxt) return; schedWarnTxt = txt;
+    const el = $('schedWarn'); el.textContent = txt; el.hidden = !d;
+  }
   function renderSchedule() {
     const sch = FLL.schedule, st = FLL.state;
+    renderSchedWarn(sch);
     if (!sch) { $('schedTable').innerHTML = '<tbody><tr><td class="muted">Load a schedule to see matches here.</td></tr></tbody>'; $('schedInfo').textContent = 'No schedule loaded'; return; }
     const ev = sch.event || {};
     $('schedInfo').textContent = `${ev.name || 'Schedule'} · ${sch.matches.length} matches · ${sch.source === 'nexus' ? 'Nexus' : 'CSV'}${sch.fetchedAt ? ' · fetched ' + new Date(sch.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}${sch.shiftedBy ? ' · times shifted ' + shiftTxt(sch.shiftedBy) : ''}`;

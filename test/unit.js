@@ -75,4 +75,9 @@ t('CSV export: cells are quoted for spreadsheets and import back unchanged', () 
   assert.ok(!/(^|,)"?[=+\-@]/.test(cells), out);
   assert.deepStrictEqual(S.parseCSV(out).matches.map(m => m.teams), p.matches.map(m => m.teams));
 });
+t('CSV import lists teams that two columns put on the same table', () => {
+  const p = S.parseCSV('Match,Time,Table 1,Red,Table 2\n1,9:30,111,222,333\n');
+  assert.deepStrictEqual(p.dropped, [{ row: 2, table: '2', team: '222', keptTeam: '333' }]);
+  assert.strictEqual(S.parseCSV('Match,Time,Table 1,Table 2\n1,9:30,111,222\n').dropped, undefined);
+});
 console.log(`\n${pass} unit tests passed`);
