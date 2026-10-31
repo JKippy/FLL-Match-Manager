@@ -313,14 +313,21 @@ function handleMessage(c, msg) {
         : (!ok && c.send({ t: 'error', error: String(e.message || e) }));
       // Table referees need no PIN: they can only mark their own table ready or call the Head Ref.
       if (REF_CMDS.includes(msg.cmd) && !refRateOk(c)) { reply(false, new Error('Too many taps. Wait a moment and try again.')); return; }
-      if (REF_CMDS.includes(msg.cmd)) { Promise.resolve().then(() => refCommand(msg, c)).then(() => reply(true), e => reply(false, e)); return; }
-      if (c.role !== 'control' || !c.authed) { reply(false, new Error('Not authorized: enter the Head Ref PIN')); return; }
-      Promise.resolve().then(() => runCommand(msg, c)).then(() => reply(true), e => reply(false, e));
+      if (!REF_CMDS.includes(msg.cmd) && (c.role !== 'control' || !c.authed)) { reply(false, new Error('Not authorized: enter the Head Ref PIN')); return; }
+      // A tap's uid is applied at most once (also across reconnects): a repeat gets the first result, nothing is re-applied.
+      const dk = typeof msg.uid === 'string' && msg.uid ? msg.uid.slice(0, 80) + '|' + msg.cmd + '|' + c.role + (c.authed ? '+' : '') : null;
+      let run = dk && doneCmds.get(dk);
+      if (!run) {
+        run = Promise.resolve().then(() => REF_CMDS.includes(msg.cmd) ? refCommand(msg, c) : runCommand(msg, c)).then(() => null, e => e);
+        if (dk) { doneCmds.set(dk, run); if (doneCmds.size > DONE_MAX) doneCmds.delete(doneCmds.keys().next().value); }
+      }
+      run.then(e => e ? reply(false, e) : reply(true));
       return;
   }
 }
 
 const REF_CMDS = ['refReady', 'refCall', 'refCancel'];
+const doneCmds = new Map(), DONE_MAX = 2000;   // recent command uids -> result (oldest dropped first)
 // Referee buttons need no PIN, so they are rate limited: 20 per 10 s per connection and 60 per 10 s per address.
 const refHits = new Map();
 function refRateOk(c) {
@@ -366,7 +373,7 @@ async function runCommand(msg, c) {
   switch (msg.cmd) {
     // ----- timer -----
     case 'start': {
-      if (timer.kind === 'match' && timer.status === 'running') refuse('The match is already running');
+      if (timer.kind === 'match' && timer.status === 'running') return;   // START means "running": already true, nothing to do (never a pause)
       // Don't start more than aheadMin ahead of schedule without the Head Ref confirming.
       // ...and, once referee pages are in use, not before every table in the match is READY. Both are one confirm (force).
       if (timer.status !== 'paused' && !msg.force && sch) {
@@ -402,6 +409,7 @@ async function runCommand(msg, c) {
     }
     case 'pause':
       if (timer.kind === 'break') refuse("A field break can't be paused (START begins the match, END BREAK cancels the break)");
+      if (timer.status === 'paused') return;   // PAUSE means "paused": already true, nothing to do
       if (timer.status !== 'running') refuse('Nothing to pause: the timer is not running');
       timer.remainingAtPause = Math.min(timer.duration, Math.max(0, timer.duration - (t - timer.startAt)));
       timer.status = 'paused'; timer.startAt = null; timer.lastAction = 'pause';
