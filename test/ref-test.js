@@ -73,13 +73,13 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
     await R['1'].screenshot({ path: path.join(SHOTS, 'v5_ref_phone_not_ready.png') });
 
     // ---------- READY toggle + broadcast ----------
-    await R['1'].tap('#readyBtn'); await sleep(500);
+    await R['1'].tap('#readyBtn'); await sleep(700);   // > the ref page's ~600 ms repeat-tap guard
     { const wk = await R['1'].evaluate(() => ({ wake: FLL.wake || '', video: [...document.querySelectorAll('video')].some(v => !v.paused) }));
       check('ref page keeps the phone screen awake after the first tap', (!!wk.wake && wk.wake !== 'none') || wk.video, wk); }
     check('tap READY: server state + control see T1 ready for Match 1', (await readyOf(0)) === '1' && (await rs(R['1'])).ready === true);
     check('ref T1: button shows ✓ READY', /✓ READY/.test(await R['1'].evaluate(() => document.getElementById('readyBtn').textContent)));
     await R['1'].screenshot({ path: path.join(SHOTS, 'v5_ref_phone_ready.png') });
-    await R['1'].tap('#readyBtn'); await sleep(400);
+    await R['1'].tap('#readyBtn'); await sleep(700);
     check('tap again: toggles back to not ready', (await readyOf(0)) === '' && (await rs(R['1'])).ready === false);
     await R['1'].tap('#readyBtn'); await R['2'].tap('#readyBtn'); await sleep(500);
     check('T1 + T2 ready: broadcast to every page', (await readyOf(0)) === '1,2' && (await D.main.evaluate(() => Object.keys(FLL.readyOf(0)).sort().join(','))) === '1,2');
@@ -186,7 +186,7 @@ const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isM
     check('audience displays never show the call or play it', await (async () => {
       for (const p of Object.values(D)) { const txt = await p.evaluate(() => document.body.innerText); const pl = await p.evaluate(() => (window.__plays || []).filter(x => x.cue === 'call').length); if (/calling|Head Ref called/i.test(txt) || pl) return false; }
       return true; })());
-    await R['4'].tap('#callBtn'); await sleep(500);
+    await R['4'].tap('#callBtn'); await sleep(700);
     check('second table calls: two banners, one more chime', (await control.evaluate(() => document.querySelectorAll('#callBanner .callrow').length)) === 2 && (await control.evaluate(() => window.__callPlays.length)) === 2);
     await R['4'].tap('#callBtn'); await sleep(500);
     check('ref can cancel its call: banner goes away', (await control.evaluate(() => document.querySelectorAll('#callBanner .callrow').length)) === 1 && (await rs(R['4'])).called === 'none');

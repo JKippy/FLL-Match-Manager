@@ -170,7 +170,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await cmd('set', { duration: 150000 }); await cmd('goto', { index: 2 }); await shift(2, Date.now() + 30000); await sleep(400);
     await control.click('#time'); await sleep(800);
     check('clicking the big timer digits starts the match', (await st()).status === 'running');
-    await control.click('#time'); await sleep(600);
+    await control.click('#time'); await sleep(800);
     check('...and pauses it', (await st()).status === 'paused');
     await cmd('reset'); await sleep(400);
     await control.click('#autoAdv'); await control.click('#autoAdv'); await control.keyboard.press('Space'); await sleep(800);

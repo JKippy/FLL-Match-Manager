@@ -161,6 +161,7 @@
     setHTML('note', note);
     // READY toggle
     const on = !!(nx && !nx.live && FLL.isReady(nx.i, table));
+    shownReady = on; shownState = st;   // a READY tap means "the opposite of what is on screen now"
     const bad = linkBad();
     const b = $('readyBtn'), can = !!(nx && !nx.live && FLL.connected && !bad);
     if (b.disabled !== !can) b.disabled = !can;
@@ -173,6 +174,7 @@
     window.__refState = { ready: on, matchIdx: nx ? nx.i : null, live: !!(nx && nx.live), called: callState() };
     // Call Head Ref
     const cs = callState(), cb = $('callBtn');
+    shownCall = cs; shownCalls = FLL.calls;
     setClass(cb, cs === 'called' ? 'called' : cs === 'acked' ? 'acked' : '');
     const cl = cs === 'called' ? '🙋 Head Ref called' : cs === 'acked' ? '✓ Head Ref is on the way' : '🙋 Call Head Ref';
     if (cb.firstChild.nodeValue !== cl) cb.firstChild.nodeValue = cl;
@@ -183,18 +185,23 @@
     if (!c.ackAt) return 'called';
     return FLL.serverNow() - c.ackAt < 15000 ? 'acked' : 'none';
   }
-  let busy = false;
-  $('readyBtn').addEventListener('click', async () => {
-    if (busy || !cur || cur.live) return; busy = true;
-    const on = !FLL.isReady(cur.i, table);
-    const r = await FLL.cmd('refReady', { table, index: cur.i, on });
-    busy = false; render();
-    if (r.ok && navigator.vibrate) try { navigator.vibrate(on ? 40 : 15); } catch (e) {}
+  // READY and Call Head Ref act on what the button showed when it was last painted, not on live state at tap time, and a
+  // repeat tap is ignored until the first one settled and its result was painted (a double tap used to undo itself).
+  let shownReady = false, shownState = null, shownCall = 'none', shownCalls = null;
+  const readyGuard = FLL.tapGuard(() => shownState), callGuard = FLL.tapGuard(() => shownCalls);
+  $('readyBtn').addEventListener('click', () => {
+    if (!cur || cur.live) return;
+    const on = !shownReady, index = cur.i;
+    readyGuard.run(async () => {
+      const r = await FLL.cmd('refReady', { table, index, on });
+      render();
+      if (r.ok && navigator.vibrate) try { navigator.vibrate(on ? 40 : 15); } catch (e) {}
+      return r;
+    });
   });
-  $('callBtn').addEventListener('click', async () => {
-    const cs = callState();
-    await FLL.cmd(cs === 'called' ? 'refCancel' : 'refCall', { table });
-    render();
+  $('callBtn').addEventListener('click', () => {
+    const c = shownCall === 'called' ? 'refCancel' : 'refCall';
+    callGuard.run(async () => { const r = await FLL.cmd(c, { table }); render(); return r; });
   });
   ['state', 'config', 'schedule', 'calls', 'status'].forEach(ev => FLL.on(ev, render));
   setInterval(render, 250);

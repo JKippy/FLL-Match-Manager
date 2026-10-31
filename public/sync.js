@@ -37,15 +37,17 @@
     // Commands resolve with the server's ack ({ok, error, code}). A refused or unsent command is never silent:
     // it is logged to the console and emitted as 'error' (the control page shows a toast), except 'ahead' which
     // is emitted as 'ahead' so the control page can ask "Start anyway?".
+    // Each tap gets one unique id (uid): the server applies a uid at most once and answers a repeat with the first ack.
+    // Commands are never resent automatically. If the reply is lost we say so and let the Head Ref / referee check the screen.
     cmd(cmd, extra) {
-      const id = ++cmdSeq;
+      const id = ++cmdSeq, uid = PAGE + '.' + id;
       return new Promise(resolve => {
-        if (!this.send(Object.assign({ t: 'cmd', cmd, id }, extra || {}))) {
+        if (!this.send(Object.assign({ t: 'cmd', cmd, id, uid }, extra || {}))) {
           const r = { ok: false, cmd, error: 'Not connected to the timer server (reconnecting…). Check the Wi-Fi and try again.' };
           S.refused(r); return resolve(r);
         }
-        const timer = setTimeout(() => { if (pending.delete(id)) { const r = { ok: false, cmd, error: 'No reply from the timer server for “' + cmd + '”. Check the connection and try again.' }; S.refused(r); resolve(r); } }, 4000);
-        pending.set(id, r => { clearTimeout(timer); resolve(r); });
+        const timer = setTimeout(() => { if (pending.delete(id)) { const r = { ok: false, cmd, error: 'No reply from the timer server for “' + label(cmd) + '”. It may still have gone through: check the screen before tapping again.' }; S.refused(r); resolve(r); } }, 4000);
+        pending.set(id, { cmd, done: r => { clearTimeout(timer); resolve(r); } });
       });
     },
     refused(r) {
@@ -57,6 +59,10 @@
   };
 
   let cmdSeq = 0; const pending = new Map();
+  // This page load's random tag (crypto, works on plain-HTTP LAN pages too): tap uids stay unique across devices and reloads.
+  const PAGE = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
+  const LABELS = { start: 'START', pause: 'PAUSE', reset: 'RESET / ABORT', breakEnd: 'END BREAK', breakStart: 'START BREAK', goto: 'change match', refReady: 'READY', refCall: 'Call Head Ref', refCancel: 'Cancel call', callAck: 'acknowledge call' };
+  const label = c => LABELS[c] || c;
   let pingTimer = null, burstLeft = 0, backoff = 500, retryT = null, openT = null;
   // Heartbeat: we ping every second; if a ping goes unanswered for HB_MS (no frame at all from the server), the link is
   // dead even though TCP hasn't noticed (half-open Wi-Fi). Drop the socket, mark the state stale and reconnect.
@@ -87,7 +93,12 @@
     ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
     try { ws.close(); } catch (e) {}
     S.ws = null; clearTimeout(openT); clearTimeout(pingTimer); pingOutAt = null;
-    for (const [id, f] of pending) { pending.delete(id); f({ ok: false, error: 'connection lost' }); }
+    // A command sent but not answered may or may not have been applied: never resend it, tell the user to check (#46).
+    for (const [id, p] of pending) {
+      pending.delete(id);
+      const r = { ok: false, cmd: p.cmd, error: 'Connection dropped: “' + label(p.cmd) + '” may not have gone through. Check the screen once reconnected, then tap again only if needed.' };
+      S.refused(r); p.done(r);
+    }
     if (stale && !S.stale) console.warn('[FLL] no reply from the timer server for ' + HB_MS + ' ms: reconnecting, sounds paused until the state is fresh');
     if (stale) S.stale = true;
     S.connected = false; S.synced = false;
@@ -130,7 +141,7 @@
       case 'play': Sound.play(m.cue, true); break;
       case 'clients': S.emit('clients', m.list); break;
       case 'error': console.warn('[FLL] server error:', m.error); S.emit('error', m.error); break;
-      case 'ack': { const f = pending.get(m.id); pending.delete(m.id); if (!m.ok) S.refused(m); if (f) f(m); break; }
+      case 'ack': { const p = pending.get(m.id); pending.delete(m.id); if (!m.ok) S.refused(m); if (p) p.done(m); break; }
       case 'notice': S.emit('notice', m.text); break;
       case 'calls': S.calls = m.calls || {}; S.emit('calls', S.calls); break;
       case 'chime': S.emit('chime', m); break;   // projector only: a referee called the Head Ref (no table info)
@@ -179,6 +190,30 @@
   // Table-referee READY marks: ready[matchIndex][table] = time tapped. Only meaningful before the match starts.
   S.readyOf = idx => (idx != null && S.state && S.state.refs && S.state.refs.ready && S.state.refs.ready[idx]) || {};
   S.isReady = (idx, table) => !!S.readyOf(idx)[String(table)];
+  // One tap at a time for buttons whose action depends on what the page shows (START/PAUSE, READY, Call Head Ref).
+  // shown() returns the server state the page last painted. run(fn) is ignored while a tap is pending, for quietMs after
+  // it settles (ack, refusal or the 4 s timeout), and, unless the server answered "no", until the page has painted a newer
+  // server state (at most waitMs more). fn sends the command; nothing is ever resent.
+  S.tapGuard = (shown, quietMs = 600, waitMs = 1000) => {
+    let tap = null;
+    const blocked = () => {
+      if (!tap) return false;
+      if (tap.pending) return true;
+      const t = performance.now();
+      if (t < tap.until || (tap.needState && shown() === tap.seen && t < tap.until + waitMs)) return true;
+      tap = null; return false;
+    };
+    return {
+      blocked,
+      run(fn) {
+        if (blocked()) return false;
+        const t = tap = { seen: shown(), pending: true, until: 0, needState: true };
+        const settle = r => { t.pending = false; t.until = performance.now() + quietMs; if (r && r.ok === false && r.id != null) t.needState = false; return r; };
+        Promise.resolve().then(fn).then(settle, e => { settle(null); throw e; });
+        return true;
+      },
+    };
+  };
   // The match START would begin next (mirrors the server's upcomingIdx).
   S.upcomingIdx = function () {
     const st = S.state, sch = S.schedule; if (!st || !sch || !sch.matches.length) return null;
