@@ -4,7 +4,7 @@ const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
 const path = require('path');
 const PORT = 8099, PIN = '2468', BASE = `http://127.0.0.1:${PORT}`;
-const SHOTS = path.join(__dirname, '..', 'screenshots');
+const { SHOTS } = require('./shots');   // test-output/screenshots unless --update
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 

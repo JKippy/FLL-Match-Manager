@@ -6,7 +6,7 @@ const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const S = require('../lib/schedule');
 const PORT = 8097, PIN = '4321', BASE = `http://127.0.0.1:${PORT}`;
-const SHOTS = path.join(__dirname, '..', 'screenshots');
+const { SHOTS } = require('./shots');   // test-output/screenshots unless --update
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const results = { checks: [] }; let failed = 0;
 function check(name, ok, detail) { results.checks.push({ name, ok: !!ok, detail }); if (!ok) failed++; console.log((ok ? '  ✓ ' : '  ✗ ') + name + (detail !== undefined ? '  ' + JSON.stringify(detail) : '')); }
