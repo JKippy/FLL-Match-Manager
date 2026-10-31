@@ -157,7 +157,7 @@ function launchBrowser() {
     for (let i = 0; i < Math.ceil(ROUNDS / 3); i++) {
       for (const which of ['#confirmNo', '#confirmYes']) {
         if ((await st()).status !== 'idle') { await cmd('reset'); await sleep(150); }
-        await press('#startBtn');
+        await sleep(TAP_GUARD_MS); await press('#startBtn');
         if (!(await waitFor(modalOpen))) { rm.clicks++; rm.missed++; rm.misses.push({ n: rm.clicks, step: 'START did not open modal' }); continue; }
         await sleep(100);
         const a0 = await acks(); await press(which); rm.clicks++;

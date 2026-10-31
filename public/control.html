@@ -399,7 +399,7 @@
     const st = FLL.state;
     if (st) {
       const r = FLL.remaining();
-      setText('time', FLL.fmt(r));
+      const tn = $('time').firstChild, tt = FLL.fmt(r); if (tn.nodeValue !== tt) tn.nodeValue = tt;   // edit the text node in place: replacing it under a press swallows the click in Safari
       const brk = FLL.isBreak();
       let cls = st.status; if (st.status === 'running' && r <= 30000) cls = 'warn'; if (r <= 0 && st.status !== 'idle') cls = 'done';
       if (brk) cls = 'break';
