@@ -136,6 +136,11 @@
   body.nature .pairbox, body.nature .upnext .col, body.nature .qcard, body.nature .qbox { border-color:#1d3326; }
   #deco svg { position:absolute; width:min(26vw, 34vh); height:auto; opacity:.17; }
   #deco .tl { top:-2vh; left:-2vw; } #deco .br { bottom:-2vh; right:-2vw; transform:rotate(180deg); }
+  /* offline badge: this screen lost the timer server and runs on its own clock (FLL-004). Small, corner, never over the clock. */
+  #offline { position:fixed; right:max(12px, env(safe-area-inset-right)); bottom:max(28px, calc(env(safe-area-inset-bottom) + 22px)); z-index:5;
+    padding:.35em .9em; border-radius:999px; background:rgba(255,196,0,.14); border:2px solid rgba(255,196,0,.55); color:var(--warn);
+    font-size:clamp(14px, 2.4vmin, 30px); font-weight:800; letter-spacing:.04em; pointer-events:none; white-space:nowrap; }
+  #offline.hidden { display:none; }
 </style>
 </head>
 <body class="nature">
@@ -147,6 +152,7 @@
   <span id="label"></span>
 </header>
 <main id="main"></main>
+<div id="offline" class="hidden" role="status" aria-live="polite">📡 OFFLINE – time may be off</div>
 <footer><span id="conn">connecting…</span><span id="sync"></span><span id="audioState"></span></footer>
 
 <div id="picker" class="overlay hidden">
@@ -212,6 +218,15 @@
     const p = FLLSound.pref || {};
     put('audioState', 'textContent', (p.muted ? '🔇 muted by head ref' : FLLSound.enabled() ? `🔊 sound on${p.vol != null && p.vol !== 1 ? ' (' + Math.round(p.vol * 100) + '%)' : ''}` : '🔇 sound off') + (FLL.wake ? ' · awake: ' + FLL.wake : ''));
   }
+  // Offline badge: shown while the socket is down after this page has been connected once (the clock keeps counting on its
+  // own, so a pause made during the outage is not shown here). Hidden again as soon as the link is back.
+  let wasConnected = false;
+  function updateOffline() {
+    if (FLL.connected) wasConnected = true;
+    const off = wasConnected && !FLL.connected, el = $('offline');
+    if (el.classList.contains('hidden') === off) el.classList.toggle('hidden', !off);
+  }
+  FLL.on('status', updateOffline); setInterval(updateOffline, 1000);
   FLL.on('status', updateFooter); FLL.on('sync', updateFooter); FLL.on('config', updateFooter); FLL.on('wake', updateFooter); FLL.on('audio', updateFooter);
   FLL.on('config', c => document.body.classList.toggle('nature', !c.display || c.display.theme !== 'plain'));
   setInterval(updateFooter, 1000);
