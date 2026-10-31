@@ -12,11 +12,13 @@ or, while another pair plays, the teams that are **up next** on its tables.
 
 ```bash
 cd fll-timer
-npm start -- --pin 2468          # port 8080, control page locked with PIN 2468
-npm start -- --port 80 --pin 2468
-# or: PORT=8080 PIN=2468 node server.js      (--data DIR / DATA_DIR = where state + uploaded sounds are saved, default ./data)
+npm start -- --pin <your-own-pin>          # port 8080, control page locked with your PIN
+npm start -- --port 80 --pin <your-own-pin>
+# or: PORT=8080 PIN=<your-own-pin> node server.js      (--data DIR / DATA_DIR = where state + uploaded sounds are saved, default ./data)
 # screens normally use the laptop's IP address; if they use a DNS name (other than a short LAN name or *.local), add  --allow-host timer.example.org
 ```
+
+Choose your own PIN for each event (not a birthday, 1234 or 0000), and don't put it on the projector or in a shared doc. Without a PIN anyone on the Wi-Fi can run the timer, and the server prints a warning at startup.
 
 The console prints the LAN addresses, for example:
 
