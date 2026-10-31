@@ -27,6 +27,9 @@ const PUBLIC = path.join(__dirname, 'public');
 const SOUND_DIR = path.join(DATA_DIR, 'sounds');
 const CUES = ['start', 'warn', 'end', 'abort', 'call'];
 const MAX_SOUND = 8 * 1024 * 1024;
+// Uploaded sounds are stored and served with a type taken from this list (by extension), never from the request.
+const EXT_TYPE = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.webm': 'audio/webm', '.flac': 'audio/flac' };
+const soundType = stored => EXT_TYPE[path.extname(String(stored || '')).toLowerCase()] || 'application/octet-stream';
 fs.mkdirSync(SOUND_DIR, { recursive: true });
 
 const now = () => Date.now();
@@ -82,7 +85,13 @@ try {
   const saved = readSaved(); if (!saved) throw null;
   for (const k of Object.keys(store)) if (saved[k] !== undefined) store[k] = (saved[k] === null || store[k] === null) ? saved[k] : Object.assign({}, store[k], saved[k]);
   store.displays = nullProto(store.displays);
-  for (const c of CUES) store.sound.cues[c] = Object.assign({ vol: 1, file: null }, store.sound.cues[c]);
+  for (const c of CUES) {
+    const cue = store.sound.cues[c] = Object.assign({ vol: 1, file: null }, store.sound.cues[c]);
+    if (cue.file) {   // older saves: keep only a plain stored file name inside data/sounds and a type from the extension
+      const st = path.basename(String(cue.file.stored || ''));
+      if (!st || !EXT_TYPE[path.extname(st).toLowerCase()]) cue.file = null; else { cue.file.stored = st; cue.file.type = EXT_TYPE[path.extname(st).toLowerCase()]; }
+    }
+  }
   // A match that was running when the server stopped keeps running (startAt is wall-clock based).
   // One that reached 0:00 while we were down is finished below exactly like a normal end (finishRun), and an
   // expired field break ends like a normal break end (match-ready).
@@ -667,6 +676,22 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const ROUTES = { '/': '/index.html', '/display': '/display.html', '/control': '/control.html', '/ref': '/ref.html' };
 const SOUND_EXT = { 'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav', 'audio/wave': '.wav', 'audio/ogg': '.ogg',
   'audio/mp4': '.m4a', 'audio/x-m4a': '.m4a', 'audio/aac': '.aac', 'audio/webm': '.webm', 'audio/flac': '.flac' };
+// Content-Security-Policy for the app pages: scripts only from this server plus the page's own inline blocks (by hash).
+const cspHashCache = new Map();
+function inlineScriptHashes(html) {
+  const key = crypto.createHash('sha1').update(html).digest('hex');
+  if (cspHashCache.has(key)) return cspHashCache.get(key);
+  const out = [], re = /<script(\s[^>]*)?>([\s\S]*?)<\/script[^>]*>/gi; let m;
+  while ((m = re.exec(html))) if (!/\ssrc\s*=/i.test(m[1] || '') && m[2].length) out.push("'sha256-" + crypto.createHash('sha256').update(m[2], 'utf8').digest('base64') + "'");
+  if (cspHashCache.size > 50) cspHashCache.clear();
+  cspHashCache.set(key, out); return out;
+}
+function pageCSP(data, host) {
+  const hp = /^[A-Za-z0-9.\-]+(:\d{1,5})?$|^\[[0-9A-Fa-f:.]+\](:\d{1,5})?$/.test(String(host || '')) ? String(host) : '';
+  return ["default-src 'self'", "script-src 'self' " + inlineScriptHashes(data.toString('utf8')).join(' '), "style-src 'self' 'unsafe-inline'",
+    "connect-src 'self'" + (hp ? ' ws://' + hp + ' wss://' + hp : ''), "img-src 'self' data: blob:", "media-src 'self' data: blob:",
+    "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
+}
 const json = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
 
 // Never let one odd request take the server down: bad URLs/headers get a 400, anything unexpected a 500.
@@ -731,7 +756,7 @@ function handleHttp(req, res) {
       const stored = mm[1] + '-' + now() + ext;
       fs.writeFile(path.join(SOUND_DIR, stored), Buffer.concat(chunks), err => {
         if (err) return json(res, 500, { error: String(err) });
-        cue.file = { name, type: type || 'audio/' + ext.slice(1), size, stored, v: now() };
+        cue.file = { name, type: EXT_TYPE[ext], size, stored, v: now() };
         save(); broadcastConfig(); json(res, 200, { ok: true, file: cue.file });
       });
     });
@@ -743,7 +768,8 @@ function handleHttp(req, res) {
     if (!f) { res.writeHead(404); return res.end(); }
     return fs.readFile(path.join(SOUND_DIR, f.stored), (err, data) => {
       if (err) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'Content-Type': f.type, 'Cache-Control': 'max-age=31536000' }); res.end(data);
+      res.writeHead(200, { 'Content-Type': soundType(f.stored), 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Content-Disposition': 'inline; filename="' + mm[1] + path.extname(f.stored) + '"', 'Cache-Control': 'max-age=31536000' }); res.end(data);
     });
   }
   let p = ROUTES[u.pathname] || u.pathname;
@@ -752,7 +778,9 @@ function handleHttp(req, res) {
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    const h = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' };
+    if (path.extname(file) === '.html') { h['Content-Security-Policy'] = pageCSP(data, req.headers.host); h['Referrer-Policy'] = 'no-referrer'; }
+    res.writeHead(200, h);
     res.end(data);
   });
 }
