@@ -80,4 +80,38 @@ t('CSV import lists teams that two columns put on the same table', () => {
   assert.deepStrictEqual(p.dropped, [{ row: 2, table: '2', team: '222', keptTeam: '333' }]);
   assert.strictEqual(S.parseCSV('Match,Time,Table 1,Table 2\n1,9:30,111,222\n').dropped, undefined);
 });
+const ODD_NAMES = ['=HYPERLINK("x")', '+1', '-x', '@x', "'quoted", "''double", 'Servo Stars', 'Bolts, Nuts & "Gears"', 'Robôts 🤖 ñandú 机器人', '<img onerror=x>'];
+t('Formula guard: guardFormula / unquoteFormula are exact inverses', () => {
+  for (const n of [...ODD_NAMES, '\tTab', '\rCR', "'", "'=", '', 'plain']) {
+    assert.strictEqual(S.unquoteFormula(S.guardFormula(n)), n, JSON.stringify(n));
+    assert.strictEqual(/^[=+\-@\t\r']/.test(n), S.guardFormula(n) === "'" + n, 'prefix only when the first char is = + - @ tab CR or apostrophe');
+  }
+  assert.strictEqual(S.guardFormula('=HYPERLINK("x")'), '\'=HYPERLINK("x")');
+  assert.strictEqual(S.guardFormula("'quoted"), "''quoted");
+  assert.strictEqual(S.guardFormula("''double"), "'''double");
+  assert.strictEqual(S.guardFormula('Servo Stars'), 'Servo Stars');
+  assert.strictEqual(S.unquoteFormula("'plain"), "'plain");          // apostrophe not followed by a guarded char stays
+  assert.strictEqual(S.unquoteFormula("''x"), "'x");                 // strips exactly one
+  assert.strictEqual(S.csvCell('Bolts, "Gears"'), '"Bolts, ""Gears"""');
+});
+t('CSV round trip keeps team names exactly (export → re-import), incl. formula-, quote- and HTML-looking names', () => {
+  const rows = ODD_NAMES.map((n, i) => `${i + 1},9:${String(30 + i).padStart(2, '0')} AM,"${1001 + i} - ${n.replace(/"/g, '""')}",${2001 + i}`);
+  const p = S.parseCSV('Match,Time,Table 1,Table 2\n' + rows.join('\n') + '\n', { date: '2026-11-14' });
+  ODD_NAMES.forEach((n, i) => assert.strictEqual(p.teamNames[String(1001 + i)], n));
+  const out = S.toCSV(p);
+  assert.ok(out.includes('1001 - =HYPERLINK'), out);                   // names are written, not just numbers
+  const q = S.parseCSV(out, { date: '2026-11-14' });
+  assert.deepStrictEqual(q.teamNames, p.teamNames);
+  assert.deepStrictEqual(q.matches.map(m => m.teams), p.matches.map(m => m.teams));
+  assert.strictEqual(q.teamNames['1010'], '<img onerror=x>');          // HTML-looking name survives as text
+  assert.deepStrictEqual(S.parseCSV(S.toCSV(q), { date: '2026-11-14' }).teamNames, p.teamNames);   // stable on a second trip
+});
+t('CSV round trip keeps Nexus and sample-schedule names', () => {
+  const used = Object.fromEntries(Object.entries(nexus.teamNames).filter(([n]) => nexus.matches.some(m => Object.values(m.teams).includes(n))));
+  assert.deepStrictEqual(S.parseCSV(S.toCSV(nexus), { date: '2026-10-31' }).teamNames, used);
+  const txt = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'sample-schedule-6tables.csv'), 'utf8');
+  const p = S.parseCSV(txt, { date: '2026-11-14' }), q = S.parseCSV(S.toCSV(p), { date: '2026-11-14' });
+  assert.deepStrictEqual(q.teamNames, p.teamNames);
+  assert.deepStrictEqual(q.matches.map(m => m.teams), p.matches.map(m => m.teams));
+});
 console.log(`\n${pass} unit tests passed`);
