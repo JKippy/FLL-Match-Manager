@@ -126,6 +126,14 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     v = await view();
     check('#54 warn: no late warning (or any cue) on reconnect, paused time shown', (await warns()) === 0 && v.status === 'paused' && /paused/i.test(v.banner) &&
       (await d.evaluate(() => window.__cues.length)) === 0, { v, cues: await d.evaluate(() => window.__cues.map(c => c.name)) });
+
+    // #56: the clock is painted before the END sound is played: the screen already reads 0:00 when the sound starts.
+    await cmd('reset'); await cmd('set', { duration: 2000, label: 'Match' }); await sleep(300);
+    await d.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true });
+    await waitFor(() => d.evaluate(() => window.__cues.some(c => c.name === 'end' && c.playAt)), 6000);
+    const endCue = await d.evaluate(() => window.__cues.find(c => c.name === 'end'));
+    check('#56 clock reads 0:00 when the END sound is played', !!endCue && endCue.shown === '0:00', endCue);
     await dctx.close();
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); if (srv && srv.exitCode == null) await stopServer();
