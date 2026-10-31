@@ -82,6 +82,54 @@ const HOOK = `(() => { const o = WebSocket.prototype.send; window.__sent = [];
     t = await toast(control);
     check('control: "No reply" toast says to check before tapping again', !!t && /no reply/i.test(t) && /check the screen before tapping again/i.test(t), t);
 
+    // ---------- control page: START/PAUSE follows the painted button; repeat taps are ignored ----------
+    // Taps go through the page's own handlers (button, big digits, Space) a few ms apart, like a quick double tap.
+    const tapsJS = ([seq, gap]) => new Promise(res => {
+      const fire = w => w === 'space' ? document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }))
+        : document.getElementById(w === 'time' ? 'time' : 'startBtn').click();
+      seq.forEach((w, i) => setTimeout(() => { fire(w); if (i === seq.length - 1) res(); }, i * gap));
+    });
+    const taps = (seq, gap = 40) => control.evaluate(tapsJS, [seq, gap]);
+    const btn = () => control.evaluate(() => document.getElementById('startBtn').textContent);
+    await hideToast(control); await cmd('reset'); await sleep(900);
+    await control.evaluate(() => { window.__sent = []; });
+    await taps(['btn', 'btn']); await sleep(1200);
+    s = await st();
+    check('double tap START (40 ms apart): match runs, one START sent, no PAUSE', s.status === 'running' && (await sentOf(control, 'start')) === 1 && (await sentOf(control, 'pause')) === 0, { status: s.status, sent: await control.evaluate(() => window.__sent.map(m => m.cmd)) });
+    await taps(['time', 'space', 'btn'], 25); await sleep(1200);
+    s = await st();
+    check('deliberate PAUSE after the guard: one tap pauses, the repeats (digits, Space) are ignored', s.status === 'paused' && (await sentOf(control, 'pause')) === 1 && /RESUME/.test(await btn()), s.status);
+    await taps(['space', 'time']); await sleep(1200);
+    s = await st();
+    check('RESUME double tap (Space + digits): running again, still only one PAUSE ever sent', s.status === 'running' && (await sentOf(control, 'start')) === 2 && (await sentOf(control, 'pause')) === 1, s.status);
+    await cmd('reset'); await sleep(900);
+
+    // lost reply: START applied, socket dropped before the ack; retaps before the page re-renders must not pause it
+    await hideToast(control); await control.evaluate(() => { window.__sent = []; window.__drop = 'applied'; });
+    await taps(['btn', 'btn', 'space'], 30);
+    check('control: reconnects after the lost reply', await connected(control)); await sleep(1000);
+    s = await st();
+    check('lost reply + quick retaps: match running, START sent once, no PAUSE', s.status === 'running' && (await sentOf(control, 'start')) === 1 && (await sentOf(control, 'pause')) === 0 && /PAUSE/.test(await btn()), { status: s.status, sent: await control.evaluate(() => window.__sent.map(m => m.cmd)) });
+
+    // delayed reply: PAUSE swallowed (no ack for 4 s); retaps while it is pending send nothing
+    await hideToast(control); await control.evaluate(() => { window.__sent = []; window.__drop = 'silent'; });
+    await taps(['btn']); await sleep(150); await taps(['btn', 'time', 'space'], 300); await sleep(4500);
+    s = await st();
+    check('no reply yet: retaps while waiting send nothing, match still running', s.status === 'running' && (await control.evaluate(() => window.__sent.length)) === 1, await control.evaluate(() => window.__sent.map(m => m.cmd)));
+    await sleep(1800); await taps(['btn']); await sleep(800);
+    s = await st();
+    check('after the timeout and the guard, a deliberate PAUSE tap pauses', s.status === 'paused' && (await sentOf(control, 'pause')) === 2, s.status);
+    await cmd('reset'); await sleep(300); await hideToast(control);
+
+    // ---------- control checkboxes: a double click acts on the box as painted, and box and server agree afterwards ----------
+    for (const [id, srv] of [['autoAdv', 'FLL.state.match.autoAdvance !== false'], ['brkAuto', '!!(FLL.config.breaks || {}).auto']]) {
+      const before = await control.evaluate(new Function('return ' + srv));
+      await control.evaluate(id => new Promise(res => { const b = document.getElementById(id); b.click(); setTimeout(() => { b.click(); res(); }, 40); }), id);
+      await sleep(900);
+      const after = await control.evaluate(new Function('id', `return { box: document.getElementById(id).checked, server: ${srv} }`), id);
+      check(`#${id} double click: back where it started, box matches the server`, after.box === before && after.server === before, { before, after });
+    }
+
     // ---------- duplicate tap id: applied once, also across a reconnect ----------
     await control.click('#csvBox summary'); await control.setInputFiles('#csvFile', SAMPLE);
     await waitFor(() => control.evaluate(() => FLL.schedule && FLL.schedule.matches.length === 24));
@@ -118,6 +166,18 @@ const HOOK = `(() => { const o = WebSocket.prototype.send; window.__sent = [];
     await connected(ref); await sleep(1500);
     check('ref: lost READY is not resent and the table is not marked ready', (await sentOf(ref, 'refReady')) === 1 && !(await control.evaluate(() => FLL.isReady(0, '1'))));
     check('ref: READY button re-rendered from server state (not on)', !(await ref.evaluate(() => document.getElementById('readyBtn').classList.contains('on'))));
+
+    // ---------- referee page: READY and Call Head Ref double taps ----------
+    const refTaps = (sel, gap = 40) => ref.evaluate(([sel, gap]) => new Promise(res => { const b = document.querySelector(sel); b.click(); setTimeout(() => { b.click(); res(); }, gap); }), [sel, gap]);
+    await hideToast(ref); await sleep(800); await ref.evaluate(() => { window.__sent = []; });
+    await refTaps('#readyBtn'); await sleep(900);
+    check('ref: double tap READY (40 ms apart) leaves the table ready, one READY sent', await control.evaluate(() => FLL.isReady(0, '1')) && (await ref.evaluate(() => window.__sent.filter(m => m.cmd === 'refReady').map(m => m.on).join(','))) === 'true', await ref.evaluate(() => window.__sent));
+    await ref.click('#readyBtn'); await sleep(900);
+    check('ref: a deliberate tap after the guard undoes READY', !(await control.evaluate(() => FLL.isReady(0, '1'))) && !(await ref.evaluate(() => document.getElementById('readyBtn').classList.contains('on'))));
+    await refTaps('#callBtn'); await sleep(900);
+    check('ref: double tap Call Head Ref leaves the call open, no cancel sent', !!(await control.evaluate(() => FLL.calls && FLL.calls['1'])) && (await sentOf(ref, 'refCall')) === 1 && (await sentOf(ref, 'refCancel')) === 0, await ref.evaluate(() => window.__sent.map(m => m.cmd)));
+    await ref.click('#callBtn'); await sleep(900);
+    check('ref: a deliberate tap after the guard cancels the call', !(await control.evaluate(() => FLL.calls && FLL.calls['1'])) && (await sentOf(ref, 'refCancel')) === 1);
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); await new Promise(r => { srv.once('exit', r); srv.kill(); });
   fs.rmSync(DATA, { recursive: true, force: true });

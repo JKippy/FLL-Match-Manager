@@ -294,7 +294,16 @@
   $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('pinBtn').click(); });
 
   // ----- timer controls -----
-  function startPause() { const st = FLL.state; if (!st) return; FLLSound.unlock(); FLL.cmd(st.status === 'running' && !FLL.isBreak() ? 'pause' : 'start'); }
+  // START/PAUSE sends what the button showed when it was last painted, not what the live state says at tap time: the new
+  // state lands ~40 ms after a START, so a quick double tap (or a retap after a lost reply) used to send PAUSE.
+  // Button, big digits and Space share one guard: repeat taps are ignored until the first one settled and was painted.
+  let shownAction = null, shownState = null;
+  const startGuard = FLL.tapGuard(() => shownState);
+  function startPause() {
+    if (!FLL.state || !shownAction) return;
+    const action = shownAction;
+    startGuard.run(() => { FLLSound.unlock(); return FLL.cmd(action); });
+  }
   function reset() {
     const st = FLL.state; if (!st) return;
     if (FLL.isBreak()) { FLL.cmd('breakEnd'); return; }
@@ -401,6 +410,7 @@
       const bt = brk ? 'START MATCH' : st.status === 'running' ? 'PAUSE' : st.status === 'paused' ? 'RESUME' : 'START';
       if (b.textContent !== bt) b.textContent = bt; // only touch the DOM on change: rewriting every frame swallows clicks in Safari
       b.classList.toggle('pause', st.status === 'running' && !brk);
+      shownAction = st.status === 'running' && !brk ? 'pause' : 'start'; shownState = st;   // what a START/PAUSE tap means now
       const rt = brk ? 'END BREAK' : 'RESET'; if ($('resetBtn').textContent !== rt) $('resetBtn').textContent = rt;
       const matchOn = !brk && (st.status === 'running' || st.status === 'paused');
       setDis('endSession', matchOn || brk); setDis('breakNext', matchOn || !FLL.schedule); setDis('breakCustom', matchOn);

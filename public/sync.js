@@ -190,6 +190,30 @@
   // Table-referee READY marks: ready[matchIndex][table] = time tapped. Only meaningful before the match starts.
   S.readyOf = idx => (idx != null && S.state && S.state.refs && S.state.refs.ready && S.state.refs.ready[idx]) || {};
   S.isReady = (idx, table) => !!S.readyOf(idx)[String(table)];
+  // One tap at a time for buttons whose action depends on what the page shows (START/PAUSE, READY, Call Head Ref).
+  // shown() returns the server state the page last painted. run(fn) is ignored while a tap is pending, for quietMs after
+  // it settles (ack, refusal or the 4 s timeout), and, unless the server answered "no", until the page has painted a newer
+  // server state (at most waitMs more). fn sends the command; nothing is ever resent.
+  S.tapGuard = (shown, quietMs = 600, waitMs = 1000) => {
+    let tap = null;
+    const blocked = () => {
+      if (!tap) return false;
+      if (tap.pending) return true;
+      const t = performance.now();
+      if (t < tap.until || (tap.needState && shown() === tap.seen && t < tap.until + waitMs)) return true;
+      tap = null; return false;
+    };
+    return {
+      blocked,
+      run(fn) {
+        if (blocked()) return false;
+        const t = tap = { seen: shown(), pending: true, until: 0, needState: true };
+        const settle = r => { t.pending = false; t.until = performance.now() + quietMs; if (r && r.ok === false && r.id != null) t.needState = false; return r; };
+        Promise.resolve().then(fn).then(settle, e => { settle(null); throw e; });
+        return true;
+      },
+    };
+  };
   // The match START would begin next (mirrors the server's upcomingIdx).
   S.upcomingIdx = function () {
     const st = S.state, sch = S.schedule; if (!st || !sch || !sch.matches.length) return null;

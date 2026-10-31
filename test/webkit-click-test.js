@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), net = require('net');
 
 const ROUNDS = +process.env.ROUNDS || 30;
+const TAP_GUARD_MS = 700;
 const BROWSER = process.env.PWBROWSER || 'webkit';
 const PIN = '4321';
 const SAMPLE = path.join(__dirname, '..', 'public', 'sample-schedule-6tables.csv');
@@ -89,6 +90,7 @@ function launchBrowser() {
       const r = report[group] = report[group] || { clicks: 0, missed: 0, badAck: 0, misses: [] };
       if (!r.clicks) console.log('  .. ' + group);
       const a0 = await acks(), s0 = await st();
+      if (/^#(startBtn|time)$/.test(sel)) await sleep(TAP_GUARD_MS);   // the control page ignores START/PAUSE repeats for ~600 ms
       try { await press(sel); } catch (e) { r.clicks++; r.missed++; r.misses.push({ n: r.clicks, error: 'not clickable: ' + e.message.split('\n')[0], before: s0 }); return; }
       r.clicks++;
       const gotAck = await waitFor(async () => (await acks()) > a0);
