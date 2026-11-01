@@ -104,6 +104,12 @@
   .share { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
   #qr { background:#fff; padding:8px; border-radius:10px; line-height:0; }
   #qr svg { width:150px; height:150px; }
+  #remoteQueue { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
+  #remoteQueue h3 { margin:0 0 8px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
+  #queueQr { background:#fff; padding:8px; border-radius:10px; line-height:0; }
+  #queueQr:empty { display:none; }
+  #queueQr svg { width:140px; height:140px; max-width:100%; }
+  #queueUrl { font-weight:800; overflow-wrap:anywhere; word-break:break-word; }
   #qr, .refgrid .rc .q { cursor:pointer; touch-action:manipulation; }
   .qr-hidden { visibility:hidden; }   /* tap one QR code: the others hide (layout stays put) so a camera can only see that one (#61) */
   .qr-solo { outline:4px solid var(--blue); outline-offset:3px; }
@@ -211,6 +217,16 @@
     </div>
     <div class="hint adv"><kbd>Space</kbd> start / pause · <kbd>R</kbd> reset (abort plays the foghorn) · <kbd>←</kbd>/<kbd>→</kbd> previous / next match. Displays start together ~0.6 s after START.
       <label style="display:inline-flex;gap:6px;align-items:center;margin-left:6px"><input type="checkbox" id="autoAdv" checked> auto-advance after each match</label></div>
+    <div id="remoteQueue">
+      <h3>Public queue</h3>
+      <div class="share">
+        <div id="queueQr"></div>
+        <div class="urls">
+          <div id="queueUrl">The public link shows up here once the tunnel is running.</div>
+          <div class="hint">Teams and parents open this from outside the gym. It shows the queue only. The timer and referee pages stay on this network.</div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section class="card adv">
@@ -645,6 +661,22 @@
     if (!pairsBuilt || !$('pairsEd').contains(document.activeElement)) buildPairs(c.layout.pairs);
     drawQR();
     applyBreakCfg(c);
+    drawPublicQueue();
+  }
+  let queueUrlShown = null;
+  function drawPublicQueue() {
+    const url = (FLL.config && typeof FLL.config.queueUrl === 'string') ? FLL.config.queueUrl : '';
+    const el = $('queueUrl'), box = $('queueQr');
+    if (!el || !box || url === queueUrlShown) return;
+    queueUrlShown = url;
+    if (!url) {
+      el.textContent = 'The public link shows up here once the tunnel is running.';
+      box.innerHTML = '';
+      return;
+    }
+    el.innerHTML = '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(url) + '</a>';
+    try { const qr = qrcode(0, 'M'); qr.addData(url); qr.make(); box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); }
+    catch (e) { box.innerHTML = ''; }
   }
   FLL.on('config', applyConfig);
   function buildPairs(pairs) {

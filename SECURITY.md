@@ -24,3 +24,4 @@ Only the latest release receives security fixes. Please upgrade before an event.
 
 - Always start the server with a PIN (`--pin`) and choose a non-obvious one for each event.
 - Run it only on a trusted event LAN; do not expose it to the internet.
+- The optional public queue is a second program on 127.0.0.1. Point a tunnel at that port only, not at the timer.
