@@ -64,6 +64,7 @@ const freePort = () => new Promise((res, rej) => { const s = net.createServer();
     const ess = await shown(ph, ESSENTIAL), ext = await shown(ph, EXTRA);
     check('phone simple: essentials visible (start/pause/reset, match + on deck, prev/next, field break)', ess.length === ESSENTIAL.length, ESSENTIAL.filter(x => !ess.includes(x)));
     check('phone simple: extra controls hidden', ext.length === 0, ext);
+    check('phone simple: Lunch checkbox (#62) visible in the field-break box', (await shown(ph, ['brkLunch'])).length === 1);
     check('phone simple: visible toggle "Show all controls", aria-pressed=true', await ph.evaluate(() => { const b = document.getElementById('modeBtn'); return b.textContent === 'Show all controls' && b.getAttribute('aria-pressed') === 'true'; }));
     check('phone simple: no sideways scrolling', await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), await ph.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]));
     check('phone simple: no saved choice yet (default follows the screen)', (await ph.evaluate(() => localStorage.getItem('fll.simple'))) === null);
