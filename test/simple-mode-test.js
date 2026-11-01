@@ -77,12 +77,19 @@ const freePort = () => new Promise((res, rej) => { const s = net.createServer();
       const c = t => document.querySelector(`#mTeams .chip[data-table="${t}"]`).className, pill = document.getElementById('mReady');
       return /rdy/.test(c(1)) && /wait/.test(c(2)) && pill.textContent === '1/4 ready' && !!pill.offsetWidth;
     }));
+    // START/PAUSE must not move when the match starts (document position, so a page scroll doesn't count).
+    const btnTop = p => p.evaluate(() => { const r = document.getElementById('startBtn').getBoundingClientRect(); return Math.round((r.top + window.scrollY) * 10) / 10; });
+    const top0 = { phone: await btnTop(ph), laptop: await btnTop(lap) };
     await ph.click('#startBtn'); await sleep(500);
     const modal = await ph.evaluate(() => { const m = document.getElementById('confirmModal'); return m.classList.contains('hidden') ? null : document.getElementById('confirmMsg').textContent; });
     check("phone simple: START with tables not ready still asks 'Start anyway?'", !!modal && /aren't ready\. Start anyway\?/.test(modal) && (await lap.evaluate(() => FLL.state.status)) === 'idle', modal);
     await ph.screenshot({ path: path.join(SHOTS, 'v6_control_simple_phone_confirm.png') });
     await ph.click('#confirmYes'); await sleep(900);
     check('phone simple: "Start anyway" runs the match', (await ph.evaluate(() => FLL.state.status)) === 'running');
+    await sleep(1200);   // past "starting…": status, "started" time, chips without ready labels
+    const top1 = { phone: await btnTop(ph), laptop: await btnTop(lap) };
+    check('START/PAUSE button top unchanged by START: 390 px phone (simple) and 1366 px laptop (full)', top0.phone === top1.phone && top0.laptop === top1.laptop,
+      { before: top0, after: top1, sched: await ph.textContent('#mSched') });
     await ph.click('#startBtn'); await sleep(700);
     check('phone simple: PAUSE', (await ph.evaluate(() => FLL.state.status)) === 'paused' && (await ph.textContent('#startBtn')) === 'RESUME');
     await ph.click('#resetBtn'); await sleep(700);

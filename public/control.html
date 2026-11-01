@@ -70,6 +70,22 @@
   .pill.ok { background:rgba(61,220,132,.16); color:var(--run); } .pill.meh { background:rgba(255,196,0,.16); color:var(--warn); } .pill.bad { background:rgba(255,59,48,.18); color:var(--end); }
   .matchbar { display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
   .matchbar .mt { font-size:22px; font-weight:800; }
+  /* Nothing above START/PAUSE may change height when a match starts, or the button moves under the Head Ref's finger.
+     START adds "· started 8:14 PM", hides the READY pill and drops the chips' ready labels; those used to re-wrap the
+     match bar and the chips (+29 px on a phone, +48 px at 1024 px). Fixed rows, one-line text, and reserved label width. */
+  .matchbar { display:grid; grid-template-columns:auto minmax(0,auto) minmax(0,1fr) auto; grid-template-rows:38px 22px; gap:6px 10px; }
+  #prevBtn { grid-area:1/1; } #mTitle { grid-area:1/2; } #mSched { grid-area:1/3; } #nextBtn { grid-area:1/4; }
+  #mDelta, #mReady { grid-area:2/1/3/5; } #mDelta { justify-self:start; } #mReady { justify-self:end; }
+  #mTitle, #mSched, #mOnDeck, #status { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  @media (max-width:760px) {
+    .matchbar { grid-template-rows:38px 18px 22px; }
+    #mSched { grid-area:2/1/3/5; } #mDelta, #mReady { grid-area:3/1/4/5; }
+  }
+  /* Every table chip is as wide as one showing "… not ready": "✓ ready" is padded, and a chip with no label (match running,
+     ready check off) keeps an invisible one. Keep the text in sync with the label in render(). */
+  .teams .chip[data-table] i { display:inline-block; }
+  .teams .chip[data-table] i::before { content:'… not ready'; display:block; height:0; overflow:hidden; visibility:hidden; }
+  .teams .chip[data-table]:not(.rdy):not(.wait)::after { content:'… not ready'; visibility:hidden; font-style:normal; font-weight:800; margin-left:6px; font-size:12.5px; }
   .teams { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 2px; }
   .chip { background:#0f1216; border:1px solid var(--line); border-radius:10px; padding:4px 9px; font-size:14px; }
   .chip small { color:var(--dim); margin-right:5px; } .chip b { font-variant-numeric:tabular-nums; }
