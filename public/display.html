@@ -298,7 +298,7 @@
     const teamsInline = m => tablesOf(m).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small> ${esc(m.teams[t])}</span>`).join(' ');
     let now;
     if (info.liveIdx != null) { const m = L[info.liveIdx]; now = `<span class="k">Now playing</span><b>${esc(FLL.matchLabel(m))}</b> ${teamsInline(m)}<span class="clock">${text}</span>`; }
-    else if (brk) now = `<span class="k brk">Field break</span><span>next match at <b>${esc(FLL.clock(st.breakUntil))}</b></span><span class="clock brk">${text}</span>`;
+    else if (brk) now = `<span class="k brk">${esc(FLL.breakName())}</span><span>next match at <b>${esc(FLL.clock(st.breakUntil))}</b></span><span class="clock brk">${text}</span>`;
     else if (info.doneIdx != null) now = `<span class="k dim">Finished</span><b>${esc(FLL.matchLabel(L[info.doneIdx]))}</b> ${teamsInline(L[info.doneIdx])}`;
     else now = `<span class="k dim">Field ready</span><span class="muted">waiting for the Head Referee to start</span>`;
     const card = (m, i) => m ? `<div class="qcard${i === 0 ? ' first' : ''}">
@@ -330,21 +330,21 @@
       $('delta').textContent = dt.text; $('delta').className = 'pill ' + (dt.cls || '') + (dt.text ? '' : ' hidden');
 
       const brk = FLL.isBreak();
-      const breakNote = () => `<div class="breaknote"><b>FIELD BREAK</b> ${text} · next match at ${esc(FLL.clock(st.breakUntil))}</div>`;
+      const breakNote = () => `<div class="breaknote"><b>${esc(FLL.breakName().toUpperCase())}</b> ${text} · next match at ${esc(FLL.clock(st.breakUntil))}</div>`;
       if (role === 'queue' && info) {
         $('label').textContent = 'Queuing';
         setMain(queueView(st, info, text, brk), 'queue');
       } else if (role === 'main' && info && info.focus && brk) {
         const nx = info.list[info.upIdx];
-        $('label').textContent = 'Field break';
+        $('label').textContent = FLL.breakName();
         // Like the pair screens: the next match's teams are the focus; the orange break countdown is context underneath.
-        const note = `<div class="breaknote"><b>Field break</b> · next match in <span class="cd">${text}</span>${nx && nx.time != null ? ` · scheduled ${esc(FLL.clock(nx.time))}` : ''}</div>`;
+        const note = `<div class="breaknote"><b>${esc(FLL.breakName())}</b> · next match in <span class="cd">${text}</span>${nx && nx.time != null ? ` · scheduled ${esc(FLL.clock(nx.time))}` : ''}</div>`;
         setMain(nx ? `<div class="upnext mainbreak">
             <div class="kicker">Up next</div>
             <div class="mline">${esc(FLL.matchLabel(nx))} <span>· ${esc(FLL.pairsOf(nx).map(p => 'Pair ' + p).join(' + '))}</span></div>
             <div class="cols" style="--n:${Math.max(1, tablesOf(nx).length)}">${tablesOf(nx).map(t => `<div class="col"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(nx.teams[t])}</div><div class="nm">${esc(FLL.teamName(nx.teams[t]))}</div>${rtag(info.upIdx, t)}</div>`).join('')}</div>
             ${note}
-          </div>` : `<div class="main" style="display:flex;flex-direction:column;align-items:center;width:100%"><div class="brkpill">Field break</div><div class="time ${cls}" id="time">${text}</div></div>`, 'main-break');
+          </div>` : `<div class="main" style="display:flex;flex-direction:column;align-items:center;width:100%"><div class="brkpill">${esc(FLL.breakName())}</div><div class="time ${cls}" id="time">${text}</div></div>`, 'main-break');
       } else if (role === 'main' && info && info.focus) {
         const f = info.focus, nx = info.next;
         const actual = st.match.actualStarts && st.match.actualStarts[f.n];
@@ -384,12 +384,12 @@
           if (up && info.doneIdx != null && up.i === info.doneIdx) up = FLL.nextForPair(pair.id, info.doneIdx + 1);
           const justEnded = info.doneIdx != null && FLL.pairsOf(info.list[info.doneIdx]).includes(pair.id) && st.match.endedAt && FLL.serverNow() - st.match.endedAt < 10000;
           const field = brk ? breakNote() : liveM ? `Field: ${esc(FLL.matchLabel(liveM))} in progress · ${text}` : '';
-          $('label').textContent = up ? 'Up next' : '';
+          $('label').textContent = up ? 'Next match on this field' : '';   // pair screens: next for THIS pair, not the next match overall (#59)
           if (up) {
             const m = up.m;
             setMain(`${justEnded ? `<div class="over">${esc(FLL.matchLabel(info.list[info.doneIdx]))} over</div>` : ''}
               <div class="upnext">
-                <div class="kicker">Up next</div>
+                <div class="kicker">Next match on this field</div>
                 <div class="mline">${esc(FLL.matchLabel(m))} <span>· ${esc(FLL.clock(m.time))}</span></div>
                 <div class="cols">${pair.tables.map(t => `<div class="col"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(m.teams[t] || '—')}</div><div class="nm">${esc(m.teams[t] ? FLL.teamName(m.teams[t]) : 'no team')}</div>${m.teams[t] ? rtag(up.i, t) : ''}</div>`).join('')}</div>
                 ${brk ? field : `<div class="fieldnote">${field}</div>`}
@@ -401,7 +401,7 @@
       } else {
         // plain timer (also main/pair before a schedule exists)
         $('label').textContent = info && info.focus ? FLL.matchLabel(info.focus) : (st.label || '');
-        setMain(`${brk ? '<div class="brkpill">Field break</div>' : ''}<div class="time bigtime ${cls}" id="time">${text}</div><div class="banner">${bannerText(st, r)}</div>`, brk ? 'timer-break' : 'timer');
+        setMain(`${brk ? `<div class="brkpill">${esc(FLL.breakName())}</div>` : ''}<div class="time bigtime ${cls}" id="time">${text}</div><div class="banner">${bannerText(st, r)}</div>`, brk ? 'timer-break' : 'timer');
       }
     }
     requestAnimationFrame(render);

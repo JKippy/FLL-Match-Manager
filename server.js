@@ -123,7 +123,10 @@ let endTimer = null, autoSessionT = null;
 // ---------- field breaks ----------
 function endBreak(action) {
   // A break that ends (by itself or END BREAK) puts every screen into match-ready position.
-  Object.assign(timer, { status: 'idle', kind: 'match', duration: timer.matchDuration || 150000, startAt: null, remainingAtPause: null, label: 'Match', breakUntil: null, breakFor: null, lastAction: action, ready: action === 'breakEnd' });
+  // lunch: the "Lunch" label is for one break; it goes back to "Field break" when that break ends (#62). It's only cleared when a break
+  // was actually running: an End match session that skips the break (behind schedule, manual or automatic) keeps a tick made beforehand.
+  const lunch = timer.kind === 'break' ? false : !!timer.lunch;
+  Object.assign(timer, { status: 'idle', kind: 'match', duration: timer.matchDuration || 150000, startAt: null, remainingAtPause: null, label: 'Match', breakUntil: null, breakFor: null, lastAction: action, ready: action === 'breakEnd', lunch });
   timer.seq++;
 }
 function startBreak(ms, until, forIdx) {
@@ -503,6 +506,8 @@ async function runCommand(msg, c) {
       break;
     }
     case 'breakEnd': if (timer.kind !== 'break') refuse('No field break is running'); endBreak('breakEnd'); break;
+    // Label only (#62): every screen calls the current (or next) field break "Lunch". Timing and sounds don't change.
+    case 'breakLabel': timer.lunch = !!msg.lunch; break;
     case 'breakConfig': {
       const b = store.breaks;
       if (msg.aheadMin != null) b.aheadMin = Math.max(0, Math.min(30, Number(msg.aheadMin) || 0));

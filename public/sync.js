@@ -158,6 +158,8 @@
     }
   }
 
+  // What screens call a field break: "Lunch" while the Head Ref has the Lunch toggle on (#62), else "Field break".
+  S.breakName = function () { return S.state && S.state.lunch ? 'Lunch' : 'Field break'; };
   S.fmt = function (ms) {
     if (ms == null) return '-:--';
     const total = Math.ceil(ms / 1000 - 1e-6);
