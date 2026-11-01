@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="referrer" content="no-referrer">
+<title>Match queue</title>
+<style>
+  :root { --fg:#fff; --run:#3ddc84; --warn:#ffc400; --dim:#8a8f98; --blue:#4c8dff; --card:#111418; --brk:#ff9a2e; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:#000; color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+  body { min-height:100%; }
+  body.nature { background:radial-gradient(ellipse 90% 60% at 50% 115%, #0c2a18 0%, #05140c 45%, #000 85%); --card:rgba(14,24,19,.92); }
+  header { display:flex; align-items:center; gap:.6em; padding:max(12px, env(safe-area-inset-top)) 16px 8px; position:sticky; top:0; z-index:2;
+    background:rgba(0,0,0,.92); font-size:clamp(15px, 3.4vw, 28px); color:var(--dim); }
+  #name { color:#fff; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+  #updated { margin-left:auto; font-weight:800; color:#fff; font-variant-numeric:tabular-nums; font-size:.85em; }
+  #updated.stale { color:var(--warn); }
+  .dot { width:.7em; height:.7em; border-radius:50%; background:#ff3b30; flex:none; }
+  .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
+  main { padding:8px 14px max(18px, env(safe-area-inset-bottom)); }
+  .queue { display:flex; flex-direction:column; gap:12px; }
+  .qbox, .qcard { background:var(--card); border:2px solid #1f242b; border-radius:16px; }
+  body.nature .qbox, body.nature .qcard { border-color:#1d3326; }
+  .qnow { display:flex; align-items:center; gap:.7em; flex-wrap:wrap; padding:12px 14px; font-size:clamp(16px, 4vw, 28px); }
+  .qnow .k { font-weight:900; letter-spacing:.14em; color:var(--run); text-transform:uppercase; font-size:.72em; }
+  .qnow .k.brk { color:var(--brk); } .qnow .k.dim { color:var(--dim); }
+  .qnow .clock { margin-left:auto; font-weight:900; font-variant-numeric:tabular-nums; }
+  .qnext { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .qcard { border-width:3px; padding:12px 14px; min-width:0; }
+  .qcard.first { border-color:var(--blue); }
+  .qhead { display:flex; align-items:baseline; gap:.5em; flex-wrap:wrap; font-size:clamp(22px, 5vw, 40px); font-weight:800; }
+  .qhead .k { font-size:.42em; letter-spacing:.16em; color:var(--blue); text-transform:uppercase; font-weight:900; }
+  .qcard:not(.first) .qhead .k { color:var(--dim); }
+  .qhead .tm { margin-left:auto; color:#cfd4da; font-size:.55em; font-weight:700; }
+  .qhead .pr { color:var(--dim); font-size:.4em; font-weight:800; letter-spacing:.08em; }
+  .qrow { display:flex; align-items:baseline; gap:.6em; font-size:clamp(15px, 3.6vw, 22px); border-top:1px solid #1f242b; padding:8px 0; min-width:0; }
+  .qrow:first-child { border-top:0; }
+  .qrow .qt { color:var(--dim); font-weight:800; text-transform:uppercase; letter-spacing:.04em; min-width:4.6em; }
+  .qrow .qn { font-size:1.55em; font-weight:900; font-variant-numeric:tabular-nums; }
+  .qrow .qname { color:#cfd4da; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .qqueue { padding:10px 14px; font-size:clamp(14px, 3.4vw, 20px); }
+  .qqueue .k { color:var(--warn); font-weight:900; letter-spacing:.12em; text-transform:uppercase; margin-right:.5em; font-size:.8em; }
+  .qqueue .ln { display:flex; gap:.7em; flex-wrap:wrap; align-items:baseline; padding:4px 0; }
+  .qqueue .ln b { min-width:6.5em; }
+  .qqueue .tm2 { color:var(--dim); }
+  .muted { color:var(--dim); }
+  .waiting { padding:18vh 10px; text-align:center; color:var(--dim); font-size:18px; }
+  @media (max-width: 720px) {
+    .qnext { grid-template-columns:1fr; }
+    .qhead { font-size:28px; }
+  }
+</style>
+</head>
+<body class="nature">
+<header>
+  <span class="dot" id="dot"></span>
+  <span id="name">Queuing</span>
+  <span id="updated" role="status">Last updated --:--</span>
+</header>
+<main id="main"><div class="waiting">Waiting for the queue…</div></main>
+<script>
+(function () {
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const $ = id => document.getElementById(id);
+  let view = null, failed = false, lastHTML = '';
+
+  function pollMs() {
+    const q = Number(new URLSearchParams(location.search).get('poll'));
+    return q >= 200 && q <= 30000 ? q : 2000;
+  }
+  function hm(ms) {
+    const d = new Date(ms);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function showUpdated(v) {
+    const el = $('updated');
+    const at = v && v.updatedAt;
+    if (!at) { el.textContent = 'Last updated --:--'; el.removeAttribute('data-at'); return; }
+    el.textContent = 'Last updated ' + hm(at);
+    el.setAttribute('data-at', String(at));
+    el.classList.toggle('stale', failed);
+  }
+  function clock(t) {
+    if (t == null) return '';
+    try { return new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return hm(t); }
+  }
+  function fmt(ms) {
+    if (ms == null || !isFinite(ms)) return '-:--';
+    const neg = ms < 0;
+    const total = Math.ceil(Math.abs(ms) / 1000 - 1e-6);
+    return (neg ? '-' : '') + Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+  }
+  function estNow(v) {
+    if (!v.serverNow) return Date.now();
+    return v.serverNow + (Date.now() - (v.receivedAt || Date.now()));
+  }
+  function remaining(v) {
+    const t = v.timer || {};
+    if (t.status === 'paused') return t.remainingAtPause;
+    if (t.status === 'done') return 0;
+    if (t.status === 'running' && t.startAt != null) return t.startAt + (t.duration || 0) - estNow(v);
+    return t.duration;
+  }
+  const tableName = (v, t) => (v.schedule && v.schedule.tableNames && v.schedule.tableNames[t]) || ('Table ' + t);
+  const teamName = (v, n) => (v.schedule && v.schedule.teamNames && v.schedule.teamNames[n]) || '';
+  const matchLabel = m => m ? (m.practice ? 'Practice ' : 'Match ') + m.n : '';
+  function pairsOf(v, m) {
+    const pairs = (v.layout && v.layout.pairs) || [];
+    const tables = Object.keys(m.teams || {});
+    return pairs.filter(p => (p.tables || []).some(t => tables.includes(String(t)))).map(p => p.id);
+  }
+  function tablesOf(m) { return Object.keys(m.teams || {}).sort((a, b) => a - b); }
+
+  function queueHtml(v) {
+    const sch = v.schedule;
+    if (!sch || !sch.matches || !sch.matches.length) return '<div class="waiting">No matches on the queue yet.</div>';
+    const st = v.timer || {}, mm = v.match || {}, L = sch.matches;
+    const brk = st.kind === 'break' && st.status === 'running';
+    const liveIdx = (!brk && (st.status === 'running' || st.status === 'paused') && mm.live != null) ? mm.live : null;
+    const doneIdx = st.status === 'done' && mm.live != null ? mm.live : null;
+    const up = liveIdx != null ? liveIdx + 1 : (doneIdx != null && mm.current === doneIdx) ? doneIdx + 1 : (mm.current || 0);
+    const text = fmt(remaining(v));
+    const teamsInline = m => tablesOf(m).map(t => '<span class="t"><small>' + esc(tableName(v, t)) + '</small> ' + esc(m.teams[t]) + '</span>').join(' ');
+    let now;
+    if (liveIdx != null && L[liveIdx]) now = '<span class="k">Now playing</span><b>' + esc(matchLabel(L[liveIdx])) + '</b> ' + teamsInline(L[liveIdx]) + '<span class="clock">' + esc(text) + '</span>';
+    else if (brk) now = '<span class="k brk">' + esc(st.lunch ? 'Lunch' : 'Field break') + '</span><span>next match at <b>' + esc(clock(st.breakUntil)) + '</b></span><span class="clock">' + esc(text) + '</span>';
+    else if (doneIdx != null && L[doneIdx]) now = '<span class="k dim">Finished</span><b>' + esc(matchLabel(L[doneIdx])) + '</b> ' + teamsInline(L[doneIdx]);
+    else now = '<span class="k dim">Field ready</span><span class="muted">waiting for the next match</span>';
+    const card = (m, i) => m ? '<div class="qcard' + (i === 0 ? ' first' : '') + '"><div class="qhead"><span class="k">' + (i === 0 ? 'Next' : 'Then') + '</span><span>' + esc(matchLabel(m)) + '</span><span class="pr">' + esc(pairsOf(v, m).map(p => 'PAIR ' + p).join(' + ')) + '</span><span class="tm">' + esc(clock(m.time)) + '</span></div><div class="qrows">' + tablesOf(m).map(t => '<div class="qrow"><span class="qt">' + esc(tableName(v, t)) + '</span><span class="qn">' + esc(m.teams[t]) + '</span><span class="qname">' + esc(teamName(v, m.teams[t])) + '</span></div>').join('') + '</div></div>'
+      : '<div class="qcard"><div class="qhead"><span class="k">' + (i === 0 ? 'Next' : 'Then') + '</span><span class="muted">No more matches</span></div></div>';
+    const qn = v.display && v.display.queueCount != null ? v.display.queueCount : 2;
+    const qd = [];
+    for (let i = up + 2; i < Math.min(L.length, up + 2 + qn); i++) qd.push(L[i]);
+    const queued = qn > 0 ? '<div class="qbox qqueue"><div><span class="k">Should be queued</span>' + (qd.length ? '' : '<span class="muted">nothing else scheduled</span>') + '</div>' + qd.map(m => '<div class="ln"><b>' + esc(matchLabel(m)) + '</b><span class="tm2">' + esc(clock(m.time)) + '</span>' + tablesOf(m).map(t => '<span>' + esc(m.teams[t]) + (teamName(v, m.teams[t]) ? ' ' + esc(teamName(v, m.teams[t])) : '') + '</span>').join(' ') + '</div>').join('') + '</div>' : '';
+    return '<div class="queue"><div class="qbox qnow">' + now + '</div><div class="qnext">' + card(L[up], 0) + card(L[up + 1], 1) + '</div>' + queued + '</div>';
+  }
+
+  function render() {
+    document.body.classList.toggle('nature', !view || !view.display || view.display.theme !== 'plain');
+    $('dot').className = 'dot' + (view ? (failed ? ' wait' : ' ok') : '');
+    showUpdated(view);
+    if (!view) { if (failed) $('main').innerHTML = '<div class="waiting">Waiting for the queue…</div>'; return; }
+    const html = queueHtml(view);
+    if (html !== lastHTML) { $('main').innerHTML = html; lastHTML = html; }
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/queue.json', { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+      if (!r.ok) throw new Error(String(r.status));
+      const data = await r.json();
+      if (!data || typeof data !== 'object' || !data.timer) throw new Error('bad');
+      data.receivedAt = Date.now();
+      view = data;
+      failed = false;
+    } catch (e) {
+      failed = true;
+    }
+    render();
+  }
+  poll();
+  setInterval(poll, pollMs());
+  setInterval(() => { if (view && view.timer && view.timer.status === 'running') render(); }, 500);
+})();
+</script>
+</body>
+</html>

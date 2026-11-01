@@ -9,6 +9,8 @@ const os = require('os');
 const net = require('net');
 const crypto = require('crypto');
 const Sched = require('./lib/schedule');
+const QueueCfg = require('./lib/queue-config');
+const { toPublicQueue } = require('./lib/public-queue');
 
 // ---------- config ----------
 const args = process.argv.slice(2);
@@ -21,6 +23,19 @@ const PORT = parseInt(arg('port', '8080'), 10);
 const PIN = String(arg('pin', '') || '');
 const START_LEAD_MS = parseInt(arg('lead', '600'), 10);
 const DATA_DIR = path.resolve(arg('data', path.join(__dirname, 'data')));
+// Public queue link for the Head Ref page. The queue server and cloudflared are other processes;
+// this server only reads a small status file and never calls them.
+const QUEUE_URL_FILE = arg('queue-url-file', path.join(DATA_DIR, 'queue-public.json'));
+const QUEUE_URL_POLL_MS = Math.max(200, parseInt(arg('queue-url-poll-ms', '2000'), 10) || 2000);
+const queueEnv = Object.assign({}, process.env);
+const queueHostFlag = String(arg('queue-hostname', '') || '').trim();
+if (queueHostFlag) queueEnv.QUEUE_HOSTNAME = queueHostFlag;
+let namedConfigText = '';
+try {
+  const cfgPath = QueueCfg.namedConfigPath(process.env, process.cwd());
+  if (cfgPath) namedConfigText = fs.readFileSync(cfgPath, 'utf8');
+} catch (e) {}
+let queueUrlCache = QueueCfg.displayedQueueUrl({ env: queueEnv, namedConfigText, status: null });
 // Extra host names screens may use to reach this laptop (besides IP addresses, localhost and this computer's name), comma separated.
 const ALLOW_HOSTS = String(arg('allow-host', '') || '').split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
 const PUBLIC = path.join(__dirname, 'public');
@@ -276,7 +291,7 @@ function stateMsg() {
 }
 function configMsg(c) {
   const pref = (c && c.deviceId && validDeviceId(c.deviceId) && store.displays[c.deviceId]) || { vol: 1, muted: false };
-  return { t: 'config', sound: store.sound, layout: store.layout, pref, nexus: store.nexus, breaks: store.breaks, display: store.display, pinRequired: !!PIN };
+  return { t: 'config', sound: store.sound, layout: store.layout, pref, nexus: store.nexus, breaks: store.breaks, display: store.display, pinRequired: !!PIN, queueUrl: queueUrlCache };
 }
 function scheduleMsg() { return { t: 'schedule', schedule: store.schedule }; }
 
@@ -752,11 +767,21 @@ function refuseHost(req) {
   const h = hostName(req.headers.host);
   if (!hostWarned.has(h) && hostWarned.size < 20) { hostWarned.add(h); console.warn(`  Refused a request for host "${h}". If screens use that name, start with  --allow-host ${h || '<name>'}`); }
 }
+function isLoopback(req) {
+  const ip = String((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
+  return ip === '127.0.0.1' || ip === '::1';
+}
 function handleHttp(req, res) {
   const u = parseUrl(req.url);
   if (!u) return badRequest(res, 'invalid URL');
+  // Read-only snapshot for the loopback queue server. Not a control route, and not answered off this machine.
+  if (u.pathname === '/internal/queue-snapshot') {
+    if (!isLoopback(req)) { res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('Not found'); }
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { 'Content-Type': 'text/plain', 'Allow': 'GET, HEAD' }); return res.end('Method not allowed'); }
+    return json(res, 200, toPublicQueue(store, now()));
+  }
   if ((u.pathname.startsWith('/api/') || u.pathname.startsWith('/sounds/')) && !hostAllowed(req)) { refuseHost(req); return json(res, 403, { error: 'Unknown host' }); }
-  if (u.pathname === '/api/info') return json(res, 200, { urls: lanUrls(), pinRequired: !!PIN, port: PORT });
+  if (u.pathname === '/api/info') return json(res, 200, { urls: lanUrls(), pinRequired: !!PIN, port: PORT, queueUrl: queueUrlCache });
   if (u.pathname === '/api/tables') return json(res, 200, { tables: allTables().sort((a, b) => a - b) });
   if (u.pathname === '/api/time') return json(res, 200, { s: now(), ...timer });
   if (u.pathname === '/api/schedule.csv') {
@@ -835,6 +860,21 @@ function lanUrls() {
     for (const a of addrs || []) if (a.family === 'IPv4' && !a.internal) out.push({ iface: name, url: `http://${a.address}:${PORT}` });
   return out;
 }
+
+function refreshQueueUrl() {
+  fs.readFile(QUEUE_URL_FILE, 'utf8', (err, text) => {
+    let status = null;
+    if (!err && text) { try { status = JSON.parse(text); } catch (e) {} }
+    const next = QueueCfg.displayedQueueUrl({ env: queueEnv, namedConfigText, status });
+    if (next !== queueUrlCache) {
+      queueUrlCache = next;
+      if (next) console.log(`  Public queue:  ${next}`);
+      broadcastConfig();
+    }
+  });
+}
+setInterval(refreshQueueUrl, QUEUE_URL_POLL_MS).unref();
+refreshQueueUrl();
 
 server.listen(PORT, '0.0.0.0', () => {
   const urls = lanUrls();

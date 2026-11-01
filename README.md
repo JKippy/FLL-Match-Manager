@@ -228,6 +228,45 @@ Displays bookmark the laptop's IP, so make it stable: in the router's admin page
 - Keep the laptop plugged in, and set sleep to "never" while the event runs.
 - Use `--port 80` (may need admin/sudo) so URLs don't need `:8080`.
 
+## Remote queue (phones outside the gym)
+
+Teams and parents who are not on the field Wi-Fi can open a **read-only** queue. The match timer, Head Ref page, referee pages, `/api` and `/ws` stay on the laptop's network. A second program serves the public page on **127.0.0.1** only. `cloudflared` is a third program and is the only thing that faces the internet. If that queue server, cloudflared, or the internet misbehaves, the field timer keeps running: the timer never calls them.
+
+The public page matches the gym queue (now playing, next, then, should be queued). If the phone drops the connection it keeps the last queue and shows **Last updated hh:mm**.
+
+The hostname for this event is **queue.kippykiyay.com**. That name is the documented default. Set `QUEUE_HOSTNAME` to use a different one, and put the same name in the tunnel config. The server does not hardcode the name anywhere else.
+
+### One-time setup on the event laptop
+
+1. Install cloudflared.
+   - macOS: `brew install cloudflared`
+   - Linux: the `.deb` or `.rpm` from the cloudflared GitHub releases, then install it with `dpkg` or `rpm`.
+2. Log in to the Cloudflare account that owns the domain: `cloudflared tunnel login`
+3. Create the tunnel: `cloudflared tunnel create fll-queue`
+4. Attach the hostname: `cloudflared tunnel route dns fll-queue queue.kippykiyay.com`
+5. Copy `cloudflared/config.sample.yml` to `cloudflared/config.yml` (gitignored). Set `tunnel` to the UUID from step 3 and `credentials-file` to the JSON path cloudflared printed (usually `~/.cloudflared/<uuid>.json`). The sample sends only `queue.kippykiyay.com` to `http://127.0.0.1:8081`, then a catch-all `http_status:404`. If you change `QUEUE_PORT`, change that port too. If you change the hostname, set `QUEUE_HOSTNAME` to the same name.
+6. `npm run tunnel` and the timer share `data/queue-public.json` (or set `QUEUE_URL_FILE`). Use the same `--data` directory for the timer.
+
+### Starting it for the event
+
+Three processes, any order:
+
+```bash
+npm start -- --pin <your-own-pin>     # field timer. Do not publish this port.
+npm run queue                         # read-only queue on 127.0.0.1:8081
+npm run tunnel                        # cloudflared
+```
+
+Or one terminal: `npm run event -- --pin <your-own-pin>`. That starts all three. If the queue server or cloudflared exits, it prints a note and leaves the timer running.
+
+The Head Ref page shows the public URL and a QR code drawn on the laptop (same offline library as the other codes). With the sample config that URL is `https://queue.kippykiyay.com`.
+
+The queue server polls `http://127.0.0.1:<timer port>/internal/queue-snapshot` (port 8080, or `QUEUE_MAIN_PORT` / the `--port` passed to `npm run event`) with a one-second timeout and keeps the last good copy. `QUEUE_PORT` defaults to 8081.
+
+### Quick tunnel, if the named tunnel is not set up yet
+
+If `cloudflared/config.yml` is missing and `CLOUDFLARED_CONFIG` is unset, `npm run tunnel` runs a Cloudflare quick tunnel (`trycloudflare`) to `http://127.0.0.1:$QUEUE_PORT` instead. It reads the `https://….trycloudflare.com` URL from cloudflared and the Head Ref page shows it. That URL is new every run and dies when cloudflared stops. Fine for a practice. For the event, use the named tunnel above.
+
 ## Display tips
 - Set each device's **Auto-Lock / Screen timeout to Never** and keep it plugged in. The Wake Lock API only works on
   HTTPS or localhost, so on a plain-HTTP LAN the page falls back to a looping muted video. That fallback is best-effort, especially on iOS.
@@ -236,8 +275,8 @@ Displays bookmark the laptop's IP, so make it stable: in the router's admin page
 - The dot in the corner is green when connected and synced, yellow while syncing, and red while reconnecting. Reconnects are automatic.
 
 ## Files
-- `server.js`: HTTP + built-in WebSocket server, timer/match state, PIN, Nexus fetch, sound uploads, persistence
-- `lib/schedule.js`: Nexus conversion, CSV/paste parsing, pair mapping
+- `server.js`: HTTP + built-in WebSocket server, timer/match state, PIN, Nexus fetch, sound uploads, persistence. `queue-server.js`: read-only public queue on 127.0.0.1. `tunnel.js`: cloudflared (named tunnel or quick-tunnel fallback). `scripts/event.js`: starts all three. `cloudflared/config.sample.yml`: sample tunnel config.
+- `lib/schedule.js`: Nexus conversion, CSV/paste parsing, pair mapping. `lib/public-queue.js`: public queue field allowlist. `lib/queue-config.js`: queue hostname / URL.
 - `public/display.html`: all screen roles · `public/control.html`: Head Ref control · `public/ref.html`: table referee phone page · `public/sync.js`: clock sync, schedule helpers, sounds, keep-awake
 - `public/vendor/qrcode.js`: QR generator (MIT, Kazuhiko Arase), bundled so it works offline
 - `test/`: `unit.js` (schedule parsing), `sync-test.js` (timer sync), `event-test.js` (full event flow, live Nexus), `break-queue-test.js` (queuing screen + field breaks, using `public/sample-schedule-6tables.csv`), `v4-test.js` (one-shot sounds, refused-command messages, ahead confirm, match-ready after a break), `ref-test.js` (table referee page, READY, Call Head Ref), `robust-test.js` (v0.5.1 reliability checks and the projector call chime). Run with `cd test && npm install && cd .. && npm run test:all` (needs Chrome; set `CHROME=` path). `webkit-click-test.js` holds a real mouse button down for 50–150 ms, 30 times per group, on START/PAUSE, the big time digits (including across a second change), reset / END BREAK, the break-end button, prev/next, the presets, and the ahead-of-schedule Yes/No buttons. Every click must change state as that control should. Every click except Cancel must also add a successful command acknowledgement; Cancel only closes the dialog and leaves the timer idle. Run it with `npm run test:webkit` after `npx --prefix test playwright-core install --with-deps webkit`. It is not part of `npm run test:all`: that suite drives the Chrome already on the machine, and WebKit is a separate browser download plus system libraries. `PWBROWSER=chromium` runs the same clicks in Chrome. `ROUNDS` (default 30) is the click count per group.
@@ -261,6 +300,7 @@ Displays bookmark the laptop's IP, so make it stable: in the router's admin page
   (no replay on reload or late join), cancel, acknowledge, ref page cannot use Head Ref commands, and no calls on audience screens.
 
 - **Reliability** (`robust-test.js`): 51/51 checks, including the projector call chime (once per call, not on cancel + call again, again after *On my way ✓*), automatic field breaks ending on their own, and the CSV dropped-teams warning.
+- **Remote queue** (`remote-queue-test.js`, included in `npm run test:all`): 36/36 checks. The queue server listens only on 127.0.0.1, the JSON feed is an allowlist (no PIN, device id, or control fields), `/control`, `/api`, `/ws` and POST/PUT/DELETE are refused, hanging or killing the queue server and dropping the tunnel leave the field timer running, and the phone page keeps the last queue with "Last updated hh:mm".
 
 ## WebKit click regression
 `npm run test:webkit` runs in Playwright WebKit (CI job `test (Node 22, WebKit)`). It is separate from the Chrome results above and from `npm run test:all`. A local run at the default 30 rounds: 12/12 groups, 0 missed clicks — START, START/PAUSE on the button (30) and on the big digits (30), a digit click held across a second change (15), abort (10), END BREAK on the reset button (10), the break-end button (10), START MATCH during a break (10), next and prev (15 each), presets (30), and the ahead-of-schedule confirm buttons (20). Cancel only closes the dialog, so that click is checked by the dialog closing and the timer staying idle. Every other click must add a successful command acknowledgement and the state change for that button. `PWBROWSER=chromium` runs the same script against Chrome.
