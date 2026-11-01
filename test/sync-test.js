@@ -121,7 +121,8 @@ const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
     results.spectatorCmdBlocked = (await control.evaluate(() => FLL.state.status)) !== 'running';
     await phoneCtl.fill('#pinInput', PIN); await phoneCtl.click('#pinBtn'); await sleep(400);
     await control.keyboard.press('r'); await sleep(300);
-    await phoneCtl.click('[data-ms="150000"]'); await sleep(300);
+    // A phone opens the control page in simple mode (#63), which hides the presets: set 2:30 directly.
+    await phoneCtl.evaluate(() => FLL.cmd('set', { duration: 150000, label: 'Match' })); await sleep(300);
     await phoneCtl.click('#startBtn'); await sleep(3300);
     await phoneCtl.screenshot({ path: path.join(SHOTS, 'control_running_phone.png'), fullPage: true });
     await late.screenshot({ path: path.join(SHOTS, 'display_running_tablet.png') });
