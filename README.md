@@ -55,6 +55,7 @@ so any layout works.
 
 ## Head Ref control (`/control`)
 
+- **Simple mode (phones):** on a narrow screen (up to 760 px wide) the control page opens in simple mode: the match bar with READY marks and ◀ ▶, the big timer, START / PAUSE / RESUME / RESET (END BREAK during a break), **End match session**, **End break**, the Lunch checkbox, the START-anyway prompt and Call Head Ref alerts. Breaks are set up on the laptop. Everything else (presets, schedule, sounds, displays, referee links, pairs, break setup: *Break until next match*, the break length and *Break*, and break settings) is behind **Show all controls** in the header. The choice is saved on that device only (browser storage); laptops and wide screens open the full page unless you pick **Simple mode** there.
 - START / PAUSE / RESUME / RESET (clicking the big time digits also starts/pauses), presets (2:30 Match, 2:00, 1:00, 5:00), custom `m:ss`. Keyboard: `Space` start/pause, `R` reset, `←`/`→` previous/next match.
 - **Match bar:** current match, its teams, scheduled time, ahead/behind pill, on-deck match, and ◀ ▶ to move between matches.
   Pressing START records the match's **actual start**. When the match runs to 0:00 the schedule **auto-advances** (can be turned off).
