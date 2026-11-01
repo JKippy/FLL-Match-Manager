@@ -1,7 +1,8 @@
 // Lost taps (#46): a command whose connection drops before the reply shows a toast and is never resent; "No reply" tells you to
 // check before tapping again; a repeated tap id is applied once (also across a reconnect); START while running / PAUSE while
 // paused change nothing.   node test/lost-tap-test.js
-const { chromium } = require('playwright-core');
+//   PWBROWSER=webkit node test/lost-tap-test.js
+const { chromium, webkit } = require('playwright-core');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const PORT = 8094, PIN = '4321', BASE = `http://127.0.0.1:${PORT}`;
@@ -22,7 +23,11 @@ const HOOK = `(() => { const o = WebSocket.prototype.send; window.__sent = [];
   const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'fll-losttap-'));
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), '--port', PORT, '--pin', PIN, '--data', DATA], { stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((res, rej) => { srv.stdout.on('data', d => { if (/Control/.test(d)) res(); }); setTimeout(() => rej(new Error('server start timeout')), 8000); });
-  const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
+  const BROWSER = process.env.PWBROWSER || 'chromium';
+  if (BROWSER !== 'webkit' && BROWSER !== 'chromium') throw new Error('PWBROWSER must be webkit or chromium');
+  const browser = BROWSER === 'webkit'
+    ? await webkit.launch()
+    : await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
   async function mk(url, init, vp) {
     const ctx = await browser.newContext({ viewport: vp || { width: 1366, height: 1000 } }); await ctx.addInitScript(HOOK); if (init) await ctx.addInitScript(init);
     const p = await ctx.newPage(); p.on('pageerror', e => { console.log('PAGE ERROR', url, e.message); failed++; }); p.on('dialog', d => d.accept());
@@ -174,10 +179,20 @@ const HOOK = `(() => { const o = WebSocket.prototype.send; window.__sent = [];
     check('ref: double tap READY (40 ms apart) leaves the table ready, one READY sent', await control.evaluate(() => FLL.isReady(0, '1')) && (await ref.evaluate(() => window.__sent.filter(m => m.cmd === 'refReady').map(m => m.on).join(','))) === 'true', await ref.evaluate(() => window.__sent));
     await ref.click('#readyBtn'); await sleep(900);
     check('ref: a deliberate tap after the guard undoes READY', !(await control.evaluate(() => FLL.isReady(0, '1'))) && !(await ref.evaluate(() => document.getElementById('readyBtn').classList.contains('on'))));
-    await refTaps('#callBtn'); await sleep(900);
-    check('ref: double tap Call Head Ref leaves the call open, no cancel sent', !!(await control.evaluate(() => FLL.calls && FLL.calls['1'])) && (await sentOf(ref, 'refCall')) === 1 && (await sentOf(ref, 'refCancel')) === 0, await ref.evaluate(() => window.__sent.map(m => m.cmd)));
-    await ref.click('#callBtn'); await sleep(900);
-    check('ref: a deliberate tap after the guard cancels the call', !(await control.evaluate(() => FLL.calls && FLL.calls['1'])) && (await sentOf(ref, 'refCancel')) === 1);
+    // The READY taps above leave refReady, refReady in the log. Clear before the Call taps so this check
+    // only sees the call commands. The call reaches the control page when the server broadcasts it, which
+    // can be after a fixed sleep (#68); wait for that instead. The broadcast is sent before the ack, and the
+    // ref page then ignores taps for quietMs (600) after the ack. Once the button shows the call, wait past
+    // that quiet period so the next tap is the deliberate cancel.
+    await ref.evaluate(() => { window.__sent = []; });
+    await refTaps('#callBtn');
+    const callOpen = await waitFor(() => control.evaluate(() => !!(FLL.calls && FLL.calls['1'])));
+    check('ref: double tap Call Head Ref leaves the call open, no cancel sent', callOpen && (await sentOf(ref, 'refCall')) === 1 && (await sentOf(ref, 'refCancel')) === 0, await ref.evaluate(() => window.__sent.map(m => m.cmd)));
+    await waitFor(() => ref.evaluate(() => /Head Ref called/.test(document.getElementById('callBtn').textContent)));
+    await sleep(700);
+    await ref.click('#callBtn');
+    const callCleared = await waitFor(() => control.evaluate(() => !(FLL.calls && FLL.calls['1'])));
+    check('ref: a deliberate tap after the guard cancels the call', callCleared && (await sentOf(ref, 'refCancel')) === 1, await ref.evaluate(() => window.__sent.map(m => m.cmd)));
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); await new Promise(r => { srv.once('exit', r); srv.kill(); });
   fs.rmSync(DATA, { recursive: true, force: true });
