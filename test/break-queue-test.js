@@ -1,6 +1,6 @@
 // End-to-end: field breaks, queuing screen, sound packs, theme.  node test/break-queue-test.js
 // Screens: control + main projector + pairs A/B/C + queue, using public/sample-schedule-6tables.csv.
-const { chromium } = require('playwright-core');
+const { launchBrowser } = require('./launch');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const PORT = 8096, PIN = '4321', BASE = `http://127.0.0.1:${PORT}`;
@@ -14,7 +14,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
   const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'fll-break-'));
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), '--port', PORT, '--pin', PIN, '--data', DATA], { stdio: ['ignore', 'pipe', 'inherit'] });
   await new Promise((res, rej) => { srv.stdout.on('data', d => { if (/Control/.test(d)) res(); }); setTimeout(() => rej(new Error('server start timeout')), 8000); });
-  const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
+  const browser = await launchBrowser({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
   async function mk(ctxOpts, url, init) {
     const ctx = await browser.newContext(ctxOpts); if (init) await ctx.addInitScript(init);
     const p = await ctx.newPage(); p.on('pageerror', e => { console.log('PAGE ERROR', url, e.message); failed++; });

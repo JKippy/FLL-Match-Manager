@@ -2,7 +2,7 @@
 // corner (not over the clock) while it is disconnected, and hides it again on reconnect.   node test/offline-badge-test.js
 // #54: a display whose device is offline (no network) plays no local-clock cue (no 30 s warning, holds at 0:00 without END);
 // on reconnect the server state wins and nothing plays late or twice.
-const { chromium } = require('playwright-core');
+const { launchBrowser } = require('./launch');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const PORT = 8095, PIN = '4321', BASE = `http://127.0.0.1:${PORT}`;
@@ -19,7 +19,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
   }
   const stopServer = () => new Promise(r => { srv.once('exit', r); srv.kill(); });
   await startServer();
-  const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
+  const browser = await launchBrowser({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
   const waitFor = async (fn, ms = 10000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn().catch(() => false)) return true; await sleep(100); } return false; };
   try {
     const pages = {};
@@ -66,6 +66,15 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await dctx.addInitScript(() => { window.__HB_MS = 1200; window.__DEVICE_ID = 'off54'; });
     const d = await dctx.newPage(); d.on('pageerror', e => { console.log('PAGE ERROR off54', e.message); failed++; });
     await d.goto(`${BASE}/display?role=timer&autostart=1&fs=0`);
+    // Playwright Firefox sets navigator.onLine false and blocks new requests, but an
+    // already-open localhost WebSocket keeps working. Chromium's offline mode drops
+    // that socket. Close it here so these checks see the same link loss. The checks
+    // themselves are unchanged.
+    async function deviceOffline() {
+      await dctx.setOffline(true);
+      if (process.env.PWBROWSER === 'firefox')
+        await d.evaluate(() => { try { if (FLL.ws && FLL.ws.readyState < 2) FLL.ws.close(); } catch (e) {} });
+    }
     await waitFor(() => control.evaluate(() => FLL.connected && FLL.authed));
     check('#54 display connects and syncs', await waitFor(() => d.evaluate(() => FLL.connected && FLL.synced)));
     const view = () => d.evaluate(() => {
@@ -77,7 +86,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await cmd('reset'); await cmd('set', { duration: 8000, label: 'Match' }); await sleep(300);
     await d.evaluate(() => { window.__cues = []; document.body.classList.remove('flash-end'); });
     await cmd('start', { force: true }); await sleep(800);
-    await dctx.setOffline(true);
+    await deviceOffline();
     check('#54 display goes offline (badge, offline flag)', await waitFor(() => d.evaluate(() => !FLL.connected && FLL.offline && !document.getElementById('offline').classList.contains('hidden')), 6000));
     const pz = await cmd('pause');
     const paused = await control.evaluate(() => FLL.state.remainingAtPause);
@@ -96,7 +105,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     // The match really ends while the display is offline: END plays exactly once, after the server confirms.
     await d.evaluate(() => { window.__cues = []; });
     await cmd('start', { force: true }); await sleep(500);
-    await dctx.setOffline(true);
+    await deviceOffline();
     await waitFor(() => d.evaluate(() => !FLL.connected && FLL.offline), 6000);
     await waitFor(async () => (await view()).text === '0:00', 8000); await sleep(1000);
     v = await view();
@@ -112,7 +121,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await cmd('reset'); await cmd('set', { duration: 36000, label: 'Match' }); await sleep(300);
     await d.evaluate(() => { window.__cues = []; });
     await cmd('start', { force: true }); await sleep(500);
-    await dctx.setOffline(true);
+    await deviceOffline();
     check('#54 warn: display goes offline above 0:30', await waitFor(() => d.evaluate(() => !FLL.connected && FLL.offline), 6000) && (await d.evaluate(() => FLL.remaining())) > 31000, await view());
     const pz2 = await cmd('pause');
     check('#54 warn: match paused on the server above 0:30', pz2.ok && (await control.evaluate(() => FLL.state.remainingAtPause)) > 30000, pz2);

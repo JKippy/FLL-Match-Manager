@@ -1,7 +1,7 @@
 // End-to-end event test: Head Ref control + main projector + 3 pair screens, real headless Chrome.
 // Uses the public Nexus sample event "wipws" (live fetch if online, else the bundled fixture as CSV).
 // node test/event-test.js
-const { chromium } = require('playwright-core');
+const { launchBrowser } = require('./launch');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
 const S = require('../lib/schedule');
@@ -26,7 +26,7 @@ async function startServer(DATA) {
 (async () => {
   const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'fll-event-'));
   let srv = await startServer(DATA);
-  const browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
+  const browser = await launchBrowser({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
   const pages = [];
   async function mk(ctxOpts, url, init) {
     const ctx = await browser.newContext(ctxOpts); if (init) await ctx.addInitScript(init);

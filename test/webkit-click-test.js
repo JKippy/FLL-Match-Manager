@@ -5,9 +5,10 @@
 // still delivers that click, so the headless-Chrome suite never caught it.
 //   npm run test:webkit
 //   PWBROWSER=chromium npm run test:webkit   # same clicks in Chrome (CHROME= path)
+//   PWBROWSER=firefox npm run test:webkit    # same clicks in Playwright Firefox
 //   ROUNDS=30                                 # clicks per button group (default 30)
 // Install WebKit once: npx --prefix test playwright-core install --with-deps webkit
-const { webkit, chromium } = require('playwright-core');
+const { launchBrowser: launchNamed } = require('./launch');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), net = require('net');
 
@@ -48,11 +49,7 @@ async function startServer() {
 }
 
 function launchBrowser() {
-  if (BROWSER === 'chromium') {
-    return chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
-  }
-  if (BROWSER !== 'webkit') throw new Error('PWBROWSER must be webkit or chromium');
-  return webkit.launch();
+  return launchNamed({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--autoplay-policy=no-user-gesture-required', '--no-sandbox'] }, BROWSER);
 }
 
 (async () => {
@@ -61,12 +58,7 @@ function launchBrowser() {
   const report = {};
   try {
     S = await startServer();
-    try { browser = await launchBrowser(); }
-    catch (e) {
-      if (BROWSER === 'webkit' && /Executable doesn't exist|browserType\.launch/i.test(e.message))
-        e.message += '\nInstall WebKit: npx --prefix test playwright-core install --with-deps webkit';
-      throw e;
-    }
+    browser = await launchBrowser();
     const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
     const p = await ctx.newPage();
     p.on('pageerror', e => console.log('PAGEERROR', e.message));
