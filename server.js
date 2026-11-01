@@ -123,8 +123,10 @@ let endTimer = null, autoSessionT = null;
 // ---------- field breaks ----------
 function endBreak(action) {
   // A break that ends (by itself or END BREAK) puts every screen into match-ready position.
-  // lunch: the "Lunch" label is for one break; it goes back to "Field break" when that break ends (#62).
-  Object.assign(timer, { status: 'idle', kind: 'match', duration: timer.matchDuration || 150000, startAt: null, remainingAtPause: null, label: 'Match', breakUntil: null, breakFor: null, lastAction: action, ready: action === 'breakEnd', lunch: false });
+  // lunch: the "Lunch" label is for one break; it goes back to "Field break" when that break ends (#62). It's only cleared when a break
+  // was actually running: an End match session that skips the break (behind schedule, manual or automatic) keeps a tick made beforehand.
+  const lunch = timer.kind === 'break' ? false : !!timer.lunch;
+  Object.assign(timer, { status: 'idle', kind: 'match', duration: timer.matchDuration || 150000, startAt: null, remainingAtPause: null, label: 'Match', breakUntil: null, breakFor: null, lastAction: action, ready: action === 'breakEnd', lunch });
   timer.seq++;
 }
 function startBreak(ms, until, forIdx) {

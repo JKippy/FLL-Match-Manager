@@ -158,9 +158,12 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
 
     // ---- behind schedule: no break ----
     await shift(2, Date.now() - 180000); await sleep(400); notices.length = 0;
+    await control.check('#brkLunch'); await sleep(500);   // #62: Lunch ticked before the break
+    check('#62 Lunch can be ticked before the break', (await st()).lunch === true);
     await control.click('#endSession'); await sleep(700);
     s = await st();
     check('behind → End match session skips the break', s.kind === 'match' && s.status === 'idle' && notices.some(n => /Behind/.test(n)), notices);
+    check('#62 a Lunch tick made before the break survives an End match session that skips the break', s.lunch === true && (await control.isChecked('#brkLunch')));
     check('pair A shows Up next Match 3', (await view(D.A)) === 'pair-upnext' && /Match 3\b/.test(await text(D.A)));
     notices.length = 0; await control.click('#breakNext'); await sleep(500);
     check('break until next refused when behind', (await st()).kind === 'match' && notices.some(n => /ERR/.test(n)), notices);
@@ -183,6 +186,21 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     q = await text(D.Q);
     check('queue count 3 → 3 "should be queued" rows (Match 6, 7, 8)', (await D.Q.$$eval('.qqueue .ln', x => x.length)) === 3 && /Next Match 4\b/i.test(q) && /Match 8\b/.test(q), q.slice(-200));
     await D.Q.screenshot({ path: path.join(SHOTS, 'v3_queue_break_count3.png') });
+    check('#62 the Lunch tick made before the break carries into the next break', s.lunch === true && /lunch/i.test(await text(D.main)) && !/field break/i.test(await text(D.main)));
+    await control.click('#breakEndBtn'); await sleep(600);
+    s = await st();
+    check('#62 Lunch ticked before the break clears when that break ends', s.kind === 'match' && s.lunch === false && !(await control.isChecked('#brkLunch')));
+
+    // ---- #62 automatic End match session while behind: no break, the Lunch tick stays ----
+    await control.check('#brkLunch'); await sleep(400);
+    await shift(3, Date.now() - 180000); await sleep(400);
+    await control.click('#startBtn');
+    let r4 = await st(); for (let i = 0; i < 50 && !(r4.kind === 'match' && r4.status === 'running'); i++) { await sleep(100); r4 = await st(); }
+    await sleep(Math.max(0, r4.startAt + r4.duration - Date.now()) + 300);
+    for (let i = 0; i < 40 && (await st()).lastAction !== 'session'; i++) await sleep(100);
+    s = await st();
+    check('#62 automatic End match session when behind skips the break and keeps the Lunch tick', s.kind === 'match' && s.status === 'idle' && s.lastAction === 'session' && s.lunch === true && (await control.isChecked('#brkLunch')), { kind: s.kind, status: s.status, last: s.lastAction, lunch: s.lunch });
+    await control.uncheck('#brkLunch'); await control.uncheck('#brkAuto'); await sleep(400);
 
     // ---- classic pack + plain theme toggles ----
     await control.click('#packSeg button[data-pack="classic"]'); await sleep(400);

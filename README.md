@@ -156,7 +156,8 @@ A field break is a **silent** countdown in **orange** that shows how long until 
   **queuing screen** = the break clock in its top line, with the Next/Then cards unchanged.
 - **Lunch:** tick *Call this break **Lunch** on every screen* in the control page's Field break box (before or during the break). Every screen,
   including the queuing screen and the ref phones, then says *Lunch* instead of *Field break*. It is only a label: the break's length, end time,
-  silence and the automatic break at a schedule gap work exactly the same. The label goes back to *Field break* when that break ends.
+  silence and the automatic break at a schedule gap work exactly the same. A tick made before the break stays on (even if an *End match session*
+  skips the break because you're behind) and applies to the next break that runs. The label goes back to *Field break* when that break ends.
 
 ## Sounds
 
@@ -248,7 +249,7 @@ Displays bookmark the laptop's IP, so make it stable: in the router's admin page
   These cover the projector/pair views, up-next, ahead/behind, the auto-advance, abort and foghorn behaviour, cue routing per pair, volume push, per-screen mute/volume gains, sound upload (PIN-protected), the PIN lock, and restart persistence.
 - **Queuing screen + field breaks** (control + projector + pairs A, B, C + queuing screen, sample 6-table CSV): 47/47 checks. Covers the Next/Then/should-be-queued
   cards, now playing, End match session → break of the right length (target = next match − 2 min), orange digits, **no sounds during breaks**, silent break expiry,
-  break-until-next then START (start sound only on the right screens), the behind-schedule skip and refusal, auto end-session, the queue row count, the pack/look toggles, the pair screens' *Next match on this field* wording, the Lunch label (every screen, timing unchanged, clears at break end), tap-to-show-one QR codes, and that START doesn't scroll the control page.
+  break-until-next then START (start sound only on the right screens), the behind-schedule skip and refusal, auto end-session, the queue row count, the pack/look toggles, the pair screens' *Next match on this field* wording, the Lunch label (every screen, timing unchanged, clears at break end, a tick made before the break survives a manual or automatic behind-schedule End match session and carries into the next break), tap-to-show-one QR codes, and that START doesn't scroll the control page.
 - **v4 regression tests** (control + projector + pairs A, C + late-joining screens): 45/45 checks. The abort sound plays exactly once and never again after arrow keys, ◀ ▶,
   other commands, a screen reconnecting, the control page reloading or a screen joining late; start/end cues once per match; START 4 min ahead asks and Cancel / Start anyway work;
   1.5 min ahead starts with no question; break ends 2 min before the match; projector break layout; match-ready after a break (projector, pair A ready, pair C up next, no sounds);
