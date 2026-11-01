@@ -120,13 +120,21 @@ const freePort = () => new Promise((res, rej) => { const s = net.createServer();
     await lap.click('#modeBtn'); await sleep(200);
     check('laptop: back to the full page', !(await simple(lap)) && (await lap.evaluate(() => localStorage.getItem('fll.simple'))) === '0');
 
-    // ---------- storage blocked (private mode / storage off): the mode script must not throw, and defaults by width ----------
-    // (Other parts of the page also read localStorage, e.g. the saved PIN; this only checks the simple-mode code.)
+    // ---------- storage blocked (private mode / storage off): no errors, PIN prompt, simple by default, toggle works ----------
     const ctx = await browser.newContext(PHONE);
     await ctx.addInitScript(() => { const bad = () => { throw new Error('SecurityError'); }; try { Object.defineProperty(window, 'localStorage', { get: bad }); } catch (e) {} });
-    const nostore = await ctx.newPage(); const errs = []; nostore.on('pageerror', e => errs.push((e.stack || e.message).split('\n').slice(0, 3).join(' ')));
-    await nostore.goto(BASE + '/control'); await sleep(800);
-    check('storage blocked: phone still defaults to simple mode', await simple(nostore));
+    const nostore = await ctx.newPage(); const errs = []; nostore.on('pageerror', e => errs.push(e.message)); nostore.on('dialog', d => d.accept());
+    await nostore.goto(BASE + '/control');
+    await waitFor(() => nostore.evaluate(() => !document.getElementById('pinModal').classList.contains('hidden')));
+    check('storage blocked: page loads without errors and asks for the PIN', errs.length === 0 && (await nostore.isVisible('#pinInput')), errs);
+    check('storage blocked: phone defaults to simple mode', await simple(nostore));
+    await nostore.fill('#pinInput', PIN); await nostore.click('#pinBtn');
+    await waitFor(() => nostore.evaluate(() => FLL.authed && document.getElementById('pinModal').classList.contains('hidden')));
+    check('storage blocked: PIN unlocks (nothing saved, no error)', (await nostore.evaluate(() => FLL.authed)) && errs.length === 0, errs);
+    await nostore.click('#modeBtn'); await sleep(200);
+    const offNs = !(await simple(nostore)) && (await shown(nostore, EXTRA)).length === EXTRA.length;
+    await nostore.click('#modeBtn'); await sleep(200);
+    check('storage blocked: toggle still works within the session', offNs && (await simple(nostore)) && (await shown(nostore, EXTRA)).length === 0 && errs.length === 0, errs);
     await ctx.close();
   } catch (e) { console.log('TEST CRASH', e); failed++; }
   finally {
