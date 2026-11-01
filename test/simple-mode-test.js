@@ -17,8 +17,9 @@ const PHONE = Object.assign({ viewport: { width: 390, height: 844 }, hasTouch: t
   BROWSER === 'firefox' ? {} : { deviceScaleFactor: 2, isMobile: true,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' });
 const LAPTOP = { viewport: { width: 1366, height: 900 } };
-const ESSENTIAL = ['modeBtn', 'time', 'status', 'startBtn', 'resetBtn', 'matchPanel', 'mTitle', 'mTeams', 'mOnDeck', 'prevBtn', 'nextBtn', 'endSession', 'breakNext', 'breakLen', 'breakCustom'];
-const EXTRA = ['presets', 'customTime', 'brkAhead', 'brkAuto', 'brkMin', 'autoAdv', 'clients', 'nexusUrl', 'schedTable', 'volGrid', 'refGrid', 'refRegen', 'pairsEd', 'qr'];
+const ESSENTIAL = ['modeBtn', 'time', 'status', 'startBtn', 'resetBtn', 'matchPanel', 'mTitle', 'mTeams', 'mOnDeck', 'prevBtn', 'nextBtn', 'endSession', 'brkLunch'];
+const BREAK_SETUP = ['breakNext', 'breakLen', 'breakCustom'];   // break setup is for the laptop (full page)
+const EXTRA = [...BREAK_SETUP, 'presets', 'customTime', 'brkAhead', 'brkAuto', 'brkMin', 'autoAdv', 'clients', 'nexusUrl', 'schedTable', 'volGrid', 'refGrid', 'refRegen', 'pairsEd', 'qr'];
 const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.once('error', rej); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 
 (async () => {
@@ -62,8 +63,9 @@ const freePort = () => new Promise((res, rej) => { const s = net.createServer();
     check('phone (390 px): simple mode by default, already at first parse (no flash of the full page)', (await simple(ph)) && (await ph.evaluate(() => window.__simpleAtLoad)) === true);
     await waitFor(async () => (await shown(ph, ['matchPanel'])).length === 1);
     const ess = await shown(ph, ESSENTIAL), ext = await shown(ph, EXTRA);
-    check('phone simple: essentials visible (start/pause/reset, match + on deck, prev/next, field break)', ess.length === ESSENTIAL.length, ESSENTIAL.filter(x => !ess.includes(x)));
+    check('phone simple: essentials visible (start/pause/reset, match + on deck, prev/next, End match session, Lunch)', ess.length === ESSENTIAL.length, ESSENTIAL.filter(x => !ess.includes(x)));
     check('phone simple: extra controls hidden', ext.length === 0, ext);
+    check('phone simple: break setup (Break until next, break length, Break) hidden', (await shown(ph, BREAK_SETUP)).length === 0);
     check('phone simple: Lunch checkbox (#62) visible in the field-break box', (await shown(ph, ['brkLunch'])).length === 1);
     check('phone simple: visible toggle "Show all controls", aria-pressed=true', await ph.evaluate(() => { const b = document.getElementById('modeBtn'); return b.textContent === 'Show all controls' && b.getAttribute('aria-pressed') === 'true'; }));
     check('phone simple: no sideways scrolling', await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), await ph.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]));
@@ -97,8 +99,9 @@ const freePort = () => new Promise((res, rej) => { const s = net.createServer();
     check('phone simple: RESET (abort) after a confirm', (await ph.evaluate(() => FLL.state.status)) === 'idle');
 
     // ---------- field break ----------
-    await ph.fill('#breakLen', '5:00'); await ph.click('#breakCustom'); await sleep(600);
-    check('phone simple: start a field break; END BREAK visible', (await ph.evaluate(() => FLL.isBreak())) && (await shown(ph, ['breakEndBtn'])).length === 1);
+    // Break setup is on the laptop; the phone can still end a running break.
+    await lap.fill('#breakLen', '5:00'); await lap.click('#breakCustom'); await sleep(600);
+    check('laptop starts a field break; phone simple shows End break and END BREAK', (await ph.evaluate(() => FLL.isBreak())) && (await shown(ph, ['breakEndBtn', 'resetBtn'])).length === 2 && (await ph.textContent('#resetBtn')) === 'END BREAK');
     await ph.click('#breakEndBtn'); await sleep(600);
     check('phone simple: end the break', !(await ph.evaluate(() => FLL.isBreak())));
 
