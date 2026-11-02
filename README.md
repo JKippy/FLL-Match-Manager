@@ -1,5 +1,7 @@
 # FLL Synced Match Timer
 
+**Event day (Mustang Madness, Nov 14, 2026):** [RUNBOOK.md](RUNBOOK.md)
+
 One **Head Referee** device starts, pauses and resets a match timer that shows on **every screen** around the
 competition area, all on the same second. It knows the **match schedule** (from FLL Nexus or a CSV): the projector
 shows the match, teams and how far ahead or behind you are, and each table-pair screen shows its own match timer
