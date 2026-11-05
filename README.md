@@ -42,10 +42,10 @@ Then **tap once** to enable sound and keep the screen awake.
 
 | URL | Shows |
 |---|---|
-| `/display?role=main` | **Projector.** Always the timer, plus match number, the teams on every active table (grouped by pair), ahead/behind, and the match on deck. |
-| `/display?pair=A` | **Pair screen** (tables 1 & 2). During its own match: the big timer with its two team numbers. Otherwise: **Next match on this field** (the next match *on its own tables*, not the next match overall), the match number, time and big team numbers per table. It switches to the next match as soon as its match ends ("Match N over" shows for 10 s). |
+| `/display?role=main` | **Projector.** Always the timer, plus a large match number, the teams on every active table (grouped by pair), and the match on deck. Ahead/behind is on the Head Ref screen only. |
+| `/display?pair=A` | **Pair screen** (tables 1 & 2). During its own match: a large match number, the big timer, and its two team numbers. Otherwise: **Next match on this field** (the next match *on its own tables*, not the next match overall), the match number, time and big team numbers per table. It switches to the next match as soon as its match ends ("Match N over" shows for 10 s). |
 | `/display?pair=B`, `?pair=C` | Tables 3 & 4, tables 5 & 6 |
-| `/display?role=queue` | **Queuing screen** (silent). Big **Next** and **Then** cards (the next two matches: tables, team numbers, team names, scheduled time), a compact **Now playing** line with the live clock (or the field-break countdown), and a **Should be queued** list of the matches after that (2 by default, set on the control page). Shows ahead/behind and updates live. |
+| `/display?role=queue` | **Queuing screen** (silent). Big **Next** and **Then** cards (the next two matches: tables, team numbers, team names, scheduled time), a compact **Now playing** line with the live clock (or the field-break countdown), and a **Should be queued** list of the matches after that (2 by default, set on the control page). Updates live. During a **Lunch** break this list is replaced by an on-break sign (no teams to queue). Ahead/behind is on the Head Ref screen only. |
 | `/display?role=timer` | Plain countdown only (no schedule) |
 
 Pair screens only play sounds for their own matches. The projector plays them for every match. The queuing screen never plays match sounds (▶ test chimes still work).
@@ -156,11 +156,13 @@ A field break is a **silent** countdown in **orange** that shows how long until 
   **Matches are still started by the Head Ref.** START during a break ends it and starts the match (with the ahead-of-schedule confirm if needed).
 - What the screens show during a break: **projector** = *Up next* with the next match's tables and big team numbers, and an orange strip underneath:
   "Field break · next match in 3:12 · scheduled 10:15 AM"; **pair screens** = *Next match on this field* with their teams plus an orange "FIELD BREAK 3:12 · next match at …" strip;
-  **queuing screen** = the break clock in its top line, with the Next/Then cards unchanged.
-- **Lunch:** tick *Call this break **Lunch** on every screen* in the control page's Field break box (before or during the break). Every screen,
-  including the queuing screen and the ref phones, then says *Lunch* instead of *Field break*. It is only a label: the break's length, end time,
-  silence and the automatic break at a schedule gap work exactly the same. A tick made before the break stays on (even if an *End match session*
-  skips the break because you're behind) and applies to the next break that runs. The label goes back to *Field break* when that break ends.
+  **queuing screen** = during a field break, the break clock in its top line, with the Next/Then cards unchanged. During **Lunch**, the gym queue and the public hallway queue (`queue.kippykiyay.com`) replace that list with “Lunch / On a break / Teams do not need to queue” until the break ends or Lunch is unticked.
+- **Lunch:** tick *Call this break **Lunch** (queue stops calling teams)* in the control page's Field break box (before or during the break). Every screen,
+  including the queuing screen and the ref phones, then says *Lunch* instead of *Field break*. The break's length, end time,
+  silence and the automatic break at a schedule gap work exactly the same. While that break is running, the queuing screens (gym and hallway) show
+  *On a break* and do not list teams to queue; untick Lunch and the call list comes back even if the break is still running. A tick made before the break stays on (even if an *End match session*
+  skips the break because you're behind) and applies to the next break that runs. The queue keeps calling teams until a break is actually running.
+  The label goes back to *Field break* when that break ends, and the queue call list comes back with it.
 
 ## Sounds
 
