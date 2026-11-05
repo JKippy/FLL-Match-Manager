@@ -147,7 +147,14 @@ function poisonedState() {
   // ----- queue server bind, feed, methods -----
   const requests = [];
   let upstreamMode = 'ok';
-  const upstreamPayload = () => poisonedState();
+  let payloadMode = 'idle';
+  function breakPayload(lunch) {
+    const s = poisonedState();
+    const until = Date.now() + 20 * 60000;
+    Object.assign(s.timer, { status: 'running', kind: 'break', lunch: !!lunch, startAt: Date.now(), duration: 20 * 60000, breakUntil: until });
+    return s;
+  }
+  const upstreamPayload = () => payloadMode === 'lunch' ? breakPayload(true) : payloadMode === 'break' ? breakPayload(false) : poisonedState();
   const upstream = http.createServer((req, res) => {
     requests.push({ method: req.method, url: req.url });
     if (upstreamMode === 'hang') return;
@@ -215,6 +222,22 @@ function poisonedState() {
   }));
   const hm = ms => { const d = new Date(Number(ms)); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
   check('remote page shows the queue and Last updated hh:mm on a phone', /next/i.test(beforeDrop.text) && /Match 1/.test(beforeDrop.text) && /Servo Stars/.test(beforeDrop.text) && beforeDrop.updated === 'Last updated ' + hm(beforeDrop.at) && beforeDrop.at === String(updatedAt) && beforeDrop.scroll, beforeDrop);
+
+  upstreamMode = 'ok';
+  payloadMode = 'break';
+  await remote.waitForFunction(() => /field break/i.test(document.body.innerText) && /should be queued/i.test(document.body.innerText) && /Servo Stars/.test(document.body.innerText), { timeout: 8000 });
+  payloadMode = 'lunch';
+  await remote.waitForFunction(() => /on a break/i.test(document.body.innerText) && /do not need to queue/i.test(document.body.innerText), { timeout: 8000 });
+  const onBreak = await remote.evaluate(() => document.body.innerText);
+  check('remote queue during Lunch says on a break and does not call teams', /lunch/i.test(onBreak) && /on a break/i.test(onBreak) && /do not need to queue/i.test(onBreak) && !/should be queued/i.test(onBreak) && !/\bNext\b/.test(onBreak) && !/Servo Stars/.test(onBreak) && !/32778/.test(onBreak), onBreak.slice(0, 280));
+  payloadMode = 'idle';
+  await remote.waitForFunction(() => /Servo Stars/.test(document.body.innerText) && /should be queued|next/i.test(document.body.innerText) && !/on a break/i.test(document.body.innerText), { timeout: 8000 });
+  const restored = await remote.evaluate(() => ({
+    updated: (document.getElementById('updated').textContent || '').trim(),
+    at: document.getElementById('updated').getAttribute('data-at'),
+  }));
+  beforeDrop.updated = restored.updated;
+  beforeDrop.at = restored.at;
 
   upstreamMode = 'hang';
   await sleep(900);

@@ -45,6 +45,13 @@
   .qqueue .ln { display:flex; gap:.7em; flex-wrap:wrap; align-items:baseline; padding:4px 0; }
   .qqueue .ln b { min-width:6.5em; }
   .qqueue .tm2 { color:var(--dim); }
+  .brkpill { display:inline-block; background:var(--brk); color:#1c0e00; font-weight:900; letter-spacing:.14em; text-transform:uppercase; padding:.2em .9em; border-radius:999px; font-size:clamp(18px, 5vw, 40px); }
+  .qbreak { align-items:center; justify-content:center; text-align:center; min-height:70vh; }
+  .qbreak-card { display:flex; flex-direction:column; align-items:center; gap:12px; padding:8px 12px; }
+  .qbreak-on { font-size:clamp(40px, 12vw, 96px); font-weight:900; line-height:.95; }
+  .qbreak-stop { font-size:clamp(18px, 5vw, 36px); font-weight:800; }
+  .qtime { font-size:clamp(48px, 16vw, 120px); font-weight:900; color:var(--brk); font-variant-numeric:tabular-nums; line-height:.9; }
+  .brksub { font-size:clamp(16px, 4.2vw, 28px); font-weight:700; }
   .muted { color:var(--dim); }
   .waiting { padding:18vh 10px; text-align:center; color:var(--dim); font-size:18px; }
   @media (max-width: 720px) {
@@ -118,10 +125,15 @@
     if (!sch || !sch.matches || !sch.matches.length) return '<div class="waiting">No matches on the queue yet.</div>';
     const st = v.timer || {}, mm = v.match || {}, L = sch.matches;
     const brk = st.kind === 'break' && st.status === 'running';
+    const text = fmt(remaining(v));
+    // Lunch is the operator's break mode (#75). While that break is running, do not tell teams to queue.
+    if (brk && st.lunch) {
+      const when = st.breakUntil ? '<div class="brksub">Matches resume at <b>' + esc(clock(st.breakUntil)) + '</b></div>' : '';
+      return '<div class="queue qbreak"><div class="qbreak-card"><div class="brkpill">Lunch</div><div class="qbreak-on">On a break</div><div class="qbreak-stop">Teams do not need to queue</div><div class="qtime">' + esc(text) + '</div>' + when + '</div></div>';
+    }
     const liveIdx = (!brk && (st.status === 'running' || st.status === 'paused') && mm.live != null) ? mm.live : null;
     const doneIdx = st.status === 'done' && mm.live != null ? mm.live : null;
     const up = liveIdx != null ? liveIdx + 1 : (doneIdx != null && mm.current === doneIdx) ? doneIdx + 1 : (mm.current || 0);
-    const text = fmt(remaining(v));
     const teamsInline = m => tablesOf(m).map(t => '<span class="t"><small>' + esc(tableName(v, t)) + '</small> ' + esc(m.teams[t]) + '</span>').join(' ');
     let now;
     if (liveIdx != null && L[liveIdx]) now = '<span class="k">Now playing</span><b>' + esc(matchLabel(L[liveIdx])) + '</b> ' + teamsInline(L[liveIdx]) + '<span class="clock">' + esc(text) + '</span>';
@@ -139,6 +151,8 @@
 
   function render() {
     document.body.classList.toggle('nature', !view || !view.display || view.display.theme !== 'plain');
+    const onBreak = !!(view && view.timer && view.timer.kind === 'break' && view.timer.status === 'running' && view.timer.lunch);
+    $('name').textContent = onBreak ? 'On a break' : 'Queuing';
     $('dot').className = 'dot' + (view ? (failed ? ' wait' : ' ok') : '');
     showUpdated(view);
     if (!view) { if (failed) $('main').innerHTML = '<div class="waiting">Waiting for the queue…</div>'; return; }

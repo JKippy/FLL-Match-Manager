@@ -49,6 +49,17 @@ async function startServer(DATA) {
     const cmd = (c, extra) => control.evaluate(([c, e]) => FLL.cmd(c, e || {}), [c, extra]);
     const view = p => p.evaluate(() => window.__view);
     const text = p => p.evaluate(() => document.getElementById('main').innerText.replace(/\s+/g, ' '));
+    // #74: the +- pill is Head Ref only. Every satellite (projector, pairs) keeps the element hidden and empty.
+    const satellitesHideDelta = async () => {
+      for (const p of [D.main, D.A, D.B, D.C]) {
+        const hidden = await p.evaluate(() => {
+          const el = document.getElementById('delta');
+          return !!el && el.classList.contains('hidden') && !el.textContent.trim();
+        });
+        if (!hidden) return false;
+      }
+      return true;
+    };
 
     // ---- 1. load the wipws schedule: live from Nexus, fallback to fixture CSV ----
     await control.fill('#nexusUrl', 'https://fll.nexus/region/wisconsin/event/wipws/schedule');
@@ -72,7 +83,7 @@ async function startServer(DATA) {
     check('main view', (await view(D.main)) === 'main');
     const mt = await text(D.main);
     check('main shows Match 1 with 4 teams', /Match 1\b/.test(mt) && ['77354', '38663', '54448', '74194'].every(t => mt.includes(t)), mt.slice(0, 200));
-    check('main shows behind schedule', /\+3 min behind/.test(await D.main.textContent('#delta')), await D.main.textContent('#delta'));
+    check('satellites hide ahead/behind; control still shows +3 behind', await satellitesHideDelta() && /\+3 min behind/.test(await control.textContent('#mDelta')), await control.textContent('#mDelta'));
     check('pair A idle = up next', (await view(D.A)) === 'pair-upnext');
     check('pair C up next Match 2 (72268/60861)', /Match 2\b/.test(await text(D.C)) && /72268/.test(await text(D.C)) && /60861/.test(await text(D.C)), (await text(D.C)).slice(0, 160));
 
@@ -105,7 +116,20 @@ async function startServer(DATA) {
     check('pair A + B show the timer', (await view(D.A)) === 'pair-playing' && (await view(D.B)) === 'pair-playing');
     check('pair C shows up next Match 2 during A+B', (await view(D.C)) === 'pair-upnext' && /Match 2\b/.test(await text(D.C)));
     check('main shows match 1 running + started time', (await view(D.main)) === 'main' && /started/i.test(await text(D.main)), (await text(D.main)).slice(0, 160));
-    check('ahead/behind uses actual start (+3 behind)', /\+3 min behind/.test(await D.main.textContent('#delta')), await D.main.textContent('#delta'));
+    check('ahead/behind stays on control during the match (+3 behind) and off every satellite', await satellitesHideDelta() && /\+3 min behind/.test(await control.textContent('#mDelta')), await control.textContent('#mDelta'));
+    check('pair screen match number is foreground, not the dim corner label', await D.A.evaluate(() => {
+      const n = document.querySelector('.pairplay .matchno');
+      const label = document.getElementById('label');
+      if (!n || !/Match 1\b/.test(n.textContent) || !label) return false;
+      const ns = getComputedStyle(n), ls = getComputedStyle(label);
+      return parseFloat(ns.fontSize) >= parseFloat(ls.fontSize) * 1.5 && ns.color === 'rgb(255, 255, 255)' && !/match\s*1/i.test(label.textContent);
+    }));
+    check('projector match number is a headline, larger than the corner label', await D.main.evaluate(() => {
+      const n = document.querySelector('.main-top .matchno');
+      const label = document.getElementById('label');
+      if (!n || !/Match 1\b/.test(n.textContent) || !label) return false;
+      return parseFloat(getComputedStyle(n).fontSize) >= parseFloat(getComputedStyle(label).fontSize) * 2 && getComputedStyle(n).color === 'rgb(255, 255, 255)';
+    }));
     await D.main.screenshot({ path: path.join(SHOTS, 'v2_main_projector_AB_match.png') });
     await D.C.screenshot({ path: path.join(SHOTS, 'v2_pairC_upnext_during_AB.png') });
     await D.A.screenshot({ path: path.join(SHOTS, 'v2_pairA_timer.png') });

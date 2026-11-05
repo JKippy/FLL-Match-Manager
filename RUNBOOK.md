@@ -60,7 +60,7 @@ The laptop prints the LAN addresses at startup (port 8080).
 
 **End match session automatically** is off. Leave it off. (That checkbox is on the laptop.)
 
-Before the long gap: tick Lunch, then press End match session. The break runs until 2 minutes before the next match.
+Before the long gap: tick Lunch, then press End match session. The break runs until 2 minutes before the next match. The gym queue and `https://queue.kippykiyay.com` then say Lunch and on a break, and they stop telling teams to queue. Untick Lunch to show the queue again while that break is still running. End break (or the break ending on its own) also brings the queue back and clears Lunch.
 
 End break, and END BREAK on the reset button, cancel the break and leave the next match ready. START starts that match. During a break the phone labels that button START MATCH. Further than 2 minutes early, confirm Start anyway.
 
