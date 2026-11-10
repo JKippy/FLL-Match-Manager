@@ -415,6 +415,8 @@ function snap(s) {
     for (const [name, p] of [['projector', main], ['chromium', pairC], ['firefox', pairF], ['queue', queue]]) lunchWords[name] = await p.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').slice(0, 300));
     check('2-lunch', 'Lunch shows on the projector, both fields and the hallway queue',
       ['projector', 'chromium', 'firefox', 'queue'].every(n => /lunch/i.test(lunchWords[n]) && !/field break/i.test(lunchWords[n])), lunchWords);
+    check('2-lunch', 'hallway queue is on a break and does not call teams',
+      /on a break/i.test(lunchWords.queue) && /do not need to queue/i.test(lunchWords.queue) && !/should be queued/i.test(lunchWords.queue), lunchWords.queue);
     const lunchEnds = [];
     for (const p of fields) lunchEnds.push(await ends(p));
     check('2-lunch', 'Lunch does not add an END (the match end already played once)', lunchEnds.every(n => n === 1), lunchEnds);

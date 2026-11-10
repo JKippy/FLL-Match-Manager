@@ -32,12 +32,15 @@
   footer span:last-child { margin-left:auto; }
   /* plain + pair-playing timer */
   .bigtime { font-size:min(46vw, 70vh); } .bigtime.long { font-size:min(36vw, 70vh); }
-  .pairplay .bigtime { font-size:min(44vw, 58vh); } .pairplay .bigtime.long { font-size:min(34vw, 58vh); }
+  .pairplay .bigtime { font-size:min(40vw, 52vh); } .pairplay .bigtime.long { font-size:min(32vw, 52vh); }
+  .matchno { color:#fff; font-weight:900; letter-spacing:.01em; line-height:1; }
+  .pairplay .matchno { font-size:clamp(36px, 8vmin, 112px); margin-bottom:.4vh; }
   .teamsline { display:flex; gap:4vw; justify-content:center; font-size:clamp(18px, 5vmin, 64px); font-weight:700; color:#cfd4da; margin-top:2vh; flex-wrap:wrap; }
   .teamsline b { color:#fff; } .teamsline small { color:var(--dim); font-weight:600; margin-right:.4em; }
   /* main projector */
-  .main-top { display:flex; align-items:baseline; gap:2vw; font-size:clamp(22px, 6vmin, 80px); font-weight:800; }
-  .main-top .sub { font-size:.42em; color:var(--dim); font-weight:600; }
+  .main-top { display:flex; align-items:baseline; gap:2vw; font-weight:800; }
+  .main-top .matchno { font-size:clamp(42px, 10vmin, 132px); line-height:.95; }
+  .main-top .sub { font-size:clamp(16px, 2.6vmin, 36px); color:var(--dim); font-weight:600; }
   .main .time { font-size:min(30vw, 44vh); margin:1vh 0; }
   .main .time.long { font-size:min(24vw, 44vh); }
   .tables { display:flex; gap:1.6vw; justify-content:center; flex-wrap:wrap; width:100%; }
@@ -54,8 +57,9 @@
   /* pair: up next */
   .upnext { text-align:center; width:100%; }
   .upnext .kicker { color:var(--blue); font-weight:800; letter-spacing:.25em; text-transform:uppercase; font-size:clamp(18px, 5vmin, 64px); }
-  .upnext .mline { font-size:clamp(20px, 6vmin, 80px); font-weight:800; margin:.5vh 0 2vh; }
-  .upnext .mline span { color:var(--dim); font-weight:600; }
+  .upnext .mline { font-size:clamp(34px, 8.2vmin, 112px); font-weight:900; margin:.5vh 0 2vh; }
+  .upnext .mline span { color:var(--dim); font-weight:700; font-size:.55em; }
+  .upnext .mline .matchno { color:#fff; font-weight:900; font-size:1em; }
   .upnext .cols { display:flex; justify-content:center; gap:4vw; }
   .upnext .col { flex:1; max-width:46vw; background:var(--card); border-radius:2vmin; padding:2vh 1vw; border:2px solid #1f242b; }
   .upnext .col .tn { color:var(--dim); font-weight:800; text-transform:uppercase; letter-spacing:.12em; font-size:clamp(14px, 4vmin, 48px); }
@@ -127,6 +131,12 @@
   .qqueue .ln { display:flex; gap:1em; flex-wrap:wrap; align-items:baseline; padding:.25vh 0; }
   .qqueue .ln b { min-width:7.5em; } .qqueue .ln .tm2 { color:var(--dim); min-width:5em; }
   .qqueue .t { white-space:nowrap; } .qqueue .t small { color:var(--dim); margin-right:.25em; } .qqueue .t i { color:#aab0b8; font-style:normal; font-size:.85em; margin-left:.3em; }
+  /* Lunch: the call list is replaced by an on-break sign. A field break that is not Lunch keeps Next / Then. */
+  .queue.qbreak { justify-content:center; align-items:center; text-align:center; }
+  .qbreak-card { display:flex; flex-direction:column; align-items:center; gap:1.4vh; width:min(100%, 18em); }
+  .qbreak-on { font-size:clamp(42px, 11vmin, 150px); font-weight:900; letter-spacing:.02em; line-height:.95; }
+  .qbreak-stop { font-size:clamp(22px, 4.6vmin, 64px); font-weight:800; }
+  .qbreak .time { font-size:min(24vw, 30vh); margin:.4vh 0; }
   /* nature theme (season: biodiversity) - subtle, behind everything */
   #deco { position:fixed; inset:0; pointer-events:none; z-index:0; display:none; }
   body.nature #deco { display:block; }
@@ -294,6 +304,11 @@
 
   function queueView(st, info, text, brk) {
     const L = info.list, up = info.upIdx;
+    // Lunch is the operator's break mode (#75). While that break is running, do not tell teams to queue.
+    if (brk && st.lunch) {
+      const when = st.breakUntil ? `<div class="brksub">Matches resume at ${esc(FLL.clock(st.breakUntil))}</div>` : '';
+      return `<div class="queue qbreak"><div class="qbreak-card"><div class="brkpill">${esc(FLL.breakName())}</div><div class="qbreak-on">On a break</div><div class="qbreak-stop">Teams do not need to queue</div><div class="time break${text.length > 4 ? ' long' : ''}">${text}</div>${when}</div></div>`;
+    }
     const qn = FLL.config && FLL.config.display && FLL.config.display.queueCount != null ? FLL.config.display.queueCount : 2;
     const teamsInline = m => tablesOf(m).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small> ${esc(m.teams[t])}</span>`).join(' ');
     let now;
@@ -325,15 +340,14 @@
       const cls = timerClass(st, r) + (text.length > 4 ? ' long' : '');
       const info = FLL.matchInfo();
       const pair = role === 'pair' ? FLL.pairById(pairId) : null;
-      // header extras
-      const dt = info && role !== 'timer' ? FLL.deltaText(info.delta) : { text: '' };
-      $('delta').textContent = dt.text; $('delta').className = 'pill ' + (dt.cls || '') + (dt.text ? '' : ' hidden');
+      // Ahead/behind stays on the Head Ref screen only (#74).
+      if ($('delta').textContent || !$('delta').classList.contains('hidden')) { $('delta').textContent = ''; $('delta').className = 'pill hidden'; }
 
       const brk = FLL.isBreak();
       const breakNote = () => `<div class="breaknote"><b>${esc(FLL.breakName().toUpperCase())}</b> ${text} · next match at ${esc(FLL.clock(st.breakUntil))}</div>`;
       if (role === 'queue' && info) {
-        $('label').textContent = 'Queuing';
-        setMain(queueView(st, info, text, brk), 'queue');
+        $('label').textContent = brk && st.lunch ? 'On a break' : 'Queuing';
+        setMain(queueView(st, info, text, brk), brk && st.lunch ? 'queue-break' : 'queue');
       } else if (role === 'main' && info && info.focus && brk) {
         const nx = info.list[info.upIdx];
         $('label').textContent = FLL.breakName();
@@ -341,7 +355,7 @@
         const note = `<div class="breaknote"><b>${esc(FLL.breakName())}</b> · next match in <span class="cd">${text}</span>${nx && nx.time != null ? ` · scheduled ${esc(FLL.clock(nx.time))}` : ''}</div>`;
         setMain(nx ? `<div class="upnext mainbreak">
             <div class="kicker">Up next</div>
-            <div class="mline">${esc(FLL.matchLabel(nx))} <span>· ${esc(FLL.pairsOf(nx).map(p => 'Pair ' + p).join(' + '))}</span></div>
+            <div class="mline"><span class="matchno">${esc(FLL.matchLabel(nx))}</span> <span>· ${esc(FLL.pairsOf(nx).map(p => 'Pair ' + p).join(' + '))}</span></div>
             <div class="cols" style="--n:${Math.max(1, tablesOf(nx).length)}">${tablesOf(nx).map(t => `<div class="col"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(nx.teams[t])}</div><div class="nm">${esc(FLL.teamName(nx.teams[t]))}</div>${rtag(info.upIdx, t)}</div>`).join('')}</div>
             ${note}
           </div>` : `<div class="main" style="display:flex;flex-direction:column;align-items:center;width:100%"><div class="brkpill">${esc(FLL.breakName())}</div><div class="time ${cls}" id="time">${text}</div></div>`, 'main-break');
@@ -354,7 +368,7 @@
         $('label').textContent = info.doneIdx != null ? 'Match complete' : info.liveIdx != null ? 'Now playing' : soon ? 'Starting soon' : 'Up next';
         setMain(`<div class="main${soon ? ' prematch' : ''}" style="display:flex;flex-direction:column;align-items:center;width:100%">
             ${soon ? '<div class="soon">Starting soon</div>' : ''}
-            <div class="main-top"><span>${esc(FLL.matchLabel(f))}</span><span class="sub">${esc(sub)}</span></div>
+            <div class="main-top"><span class="matchno">${esc(FLL.matchLabel(f))}</span><span class="sub">${esc(sub)}</span></div>
             <div class="time ${cls}" id="time">${text}</div>
             ${tablesGrouped(f, info.liveIdx == null && info.doneIdx == null && st.status !== 'running' ? info.focusIdx : null)}
             <div class="ondeck">${nx ? `<b>On deck</b>${esc(FLL.matchLabel(nx))} · ${esc(FLL.clock(nx.time))} ${inlineTeams(nx)}` : '<b>Last match</b>'}</div>
@@ -365,15 +379,17 @@
         // After a field break ends, the pairs playing the next match go into match-ready position (full timer + teams).
         const readyM = !liveM && st.ready && st.status === 'idle' && st.kind !== 'break' ? info.list[info.currentIdx] : null;
         if (readyM && FLL.pairsOf(readyM).includes(pair.id)) {
-          $('label').textContent = FLL.matchLabel(readyM);
+          $('label').textContent = 'Starting soon';
           setMain(`<div class="pairplay" style="text-align:center">
+              <div class="matchno">${esc(FLL.matchLabel(readyM))}</div>
               <div class="time bigtime ${cls}" id="time">${text}</div>
               <div class="teamsline">${pair.tables.filter(t => readyM.teams[t]).map(t => `<span><small>${esc(FLL.tableName(t))}</small><b>${esc(readyM.teams[t])}</b>${rtag(info.currentIdx, t)}</span>`).join('')}</div>
               <div class="readytag">Starting soon · ${esc(FLL.matchLabel(readyM))}</div>
             </div>`, 'pair-ready');
         } else if (playing) {
-          $('label').textContent = FLL.matchLabel(liveM);
+          $('label').textContent = 'Now playing';
           setMain(`<div class="pairplay" style="text-align:center">
+              <div class="matchno">${esc(FLL.matchLabel(liveM))}</div>
               <div class="time bigtime ${cls}" id="time">${text}</div>
               <div class="teamsline">${pair.tables.filter(t => liveM.teams[t]).map(t => `<span><small>${esc(FLL.tableName(t))}</small><b>${esc(liveM.teams[t])}</b></span>`).join('')}</div>
             </div>`, 'pair-playing');
@@ -390,7 +406,7 @@
             setMain(`${justEnded ? `<div class="over">${esc(FLL.matchLabel(info.list[info.doneIdx]))} over</div>` : ''}
               <div class="upnext">
                 <div class="kicker">Next match on this field</div>
-                <div class="mline">${esc(FLL.matchLabel(m))} <span>· ${esc(FLL.clock(m.time))}</span></div>
+                <div class="mline"><span class="matchno">${esc(FLL.matchLabel(m))}</span> <span>· ${esc(FLL.clock(m.time))}</span></div>
                 <div class="cols">${pair.tables.map(t => `<div class="col"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(m.teams[t] || '—')}</div><div class="nm">${esc(m.teams[t] ? FLL.teamName(m.teams[t]) : 'no team')}</div>${m.teams[t] ? rtag(up.i, t) : ''}</div>`).join('')}</div>
                 ${brk ? field : `<div class="fieldnote">${field}</div>`}
               </div>`, brk ? 'pair-upnext-break' : 'pair-upnext');
