@@ -240,13 +240,19 @@ function poisonedState() {
   beforeDrop.at = restored.at;
 
   upstreamMode = 'hang';
-  await sleep(900);
+  await sleep(1200); // a poll that already left may still land; read after it has
   const whileStale = await remote.evaluate(() => ({
     updated: (document.getElementById('updated').textContent || '').trim(),
     at: document.getElementById('updated').getAttribute('data-at'),
     text: document.body.innerText,
   }));
-  check('while the upstream is stale the page keeps the last queue and the same Last updated time', whileStale.updated === beforeDrop.updated && whileStale.at === beforeDrop.at && /Servo Stars/.test(whileStale.text) && /Match 1/.test(whileStale.text));
+  await sleep(1000);
+  const stillStale = await remote.evaluate(() => ({
+    updated: (document.getElementById('updated').textContent || '').trim(),
+    at: document.getElementById('updated').getAttribute('data-at'),
+    text: document.body.innerText,
+  }));
+  check('while the upstream is stale the page keeps the last queue and the same Last updated time', whileStale.updated === stillStale.updated && whileStale.at === stillStale.at && /Servo Stars/.test(stillStale.text) && /Match 1/.test(stillStale.text) && /^Last updated \d{2}:\d{2}$/.test(stillStale.updated), { whileStale: whileStale.updated, still: stillStale.updated });
 
   await new Promise(r => q.server.close(r));
   await sleep(1000);
@@ -255,7 +261,7 @@ function poisonedState() {
     at: document.getElementById('updated').getAttribute('data-at'),
     text: document.body.innerText,
   }));
-  check('when the connection drops the page keeps the last queue and Last updated hh:mm', afterDrop.updated === beforeDrop.updated && afterDrop.at === beforeDrop.at && /Servo Stars/.test(afterDrop.text) && /Match 1/.test(afterDrop.text) && /^Last updated \d{2}:\d{2}$/.test(afterDrop.updated));
+  check('when the connection drops the page keeps the last queue and Last updated hh:mm', afterDrop.updated === stillStale.updated && afterDrop.at === stillStale.at && /Servo Stars/.test(afterDrop.text) && /Match 1/.test(afterDrop.text) && /^Last updated \d{2}:\d{2}$/.test(afterDrop.updated), { after: afterDrop.updated, still: stillStale.updated });
   await phone.close();
 
   // ----- real main server: snapshot, isolation, Head Ref QR, tunnel drop -----
