@@ -120,13 +120,20 @@ try {
 } catch (e) { if (e) loudly('Saved state could not be applied: ' + (e.message || e)); }
 // Saved synchronously and atomically BEFORE a command is acked: write a temp file, fsync, rename over state.json.
 // The previous good file is copied to state.json.bak (at most every 10 s) so a damaged file can be recovered.
+// Never copy a file that does not parse: the save after a recovery would otherwise replace the good backup with the truncated state.json (#6).
 let lastBak = 0, saveFailed = false;
+function bakSourceOk(file) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return !!saved && typeof saved === 'object' && !Array.isArray(saved);
+  } catch (e) { return false; }
+}
 function save() {
   const tmp = STORE_FILE + '.tmp';
   try {
     const fd = fs.openSync(tmp, 'w');
     try { fs.writeSync(fd, JSON.stringify(store, null, 1)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    if (now() - lastBak > 10000 && fs.existsSync(STORE_FILE)) { try { fs.copyFileSync(STORE_FILE, BAK_FILE); lastBak = now(); } catch (e) {} }
+    if (now() - lastBak > 10000 && bakSourceOk(STORE_FILE)) { try { fs.copyFileSync(STORE_FILE, BAK_FILE); lastBak = now(); } catch (e) {} }
     fs.renameSync(tmp, STORE_FILE);
     if (saveFailed) { saveFailed = false; console.error('  Saving state works again.'); }
   } catch (e) { if (!saveFailed) loudly('Could not save the timer state: ' + e.message); saveFailed = true; }

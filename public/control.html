@@ -414,9 +414,22 @@
   $('confirmYes').onclick = () => { $('confirmModal').classList.add('hidden'); FLLSound.unlock(); FLL.cmd('start', { force: true }); };
   // NEXT / PREV carry the match this page was showing: if another press (or another ref) got there first, the server
   // refuses this one with a toast instead of skipping a match.
+  // A second tap on the SAME button inside this window is a double-click (#7). By then the screen has usually already
+  // moved, so the server's stale-from check does not see it and the match would skip. The other direction is not held,
+  // so NEXT then PREV still corrects a mis-tap immediately. Arrow keys are unchanged (auto-repeat is ignored below).
+  const STEP_DOUBLE_MS = 400;
+  let lastBtnStep = null;
   const step = d => FLL.state && FLL.cmd('goto', { delta: d, from: FLL.state.match.current });
-  $('prevBtn').onclick = () => step(-1);
-  $('nextBtn').onclick = () => step(1);
+  function buttonStep(d, e) {
+    if (!FLL.state) return;
+    if (e && e.detail > 1) return;
+    const t = Date.now();
+    if (lastBtnStep && lastBtnStep.d === d && t - lastBtnStep.t < STEP_DOUBLE_MS) return;
+    lastBtnStep = { d, t };
+    step(d);
+  }
+  $('prevBtn').onclick = e => buttonStep(-1, e);
+  $('nextBtn').onclick = e => buttonStep(1, e);
   // While our own change is waiting for its ack, the render loop must not put the old server value back (the click "flipped back").
   let autoAdvPending = 0;
   $('autoAdv').onchange = e => { const id = ++autoAdvPending; FLL.cmd('autoAdvance', { on: e.target.checked }).catch(() => {}).then(() => { if (autoAdvPending === id) { autoAdvPending = 0; render(); } }); };
