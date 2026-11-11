@@ -6,7 +6,7 @@
 'use strict';
 const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
-const fs = require('fs'), os = require('os'), path = require('path'), net = require('net');
+const fs = require('fs'), os = require('os'), path = require('path'), net = require('net'), http = require('http');
 
 const PIN = '4321';
 const SAMPLE = path.join(__dirname, '..', 'public', 'sample-schedule-6tables.csv');
@@ -83,6 +83,14 @@ function connect(port) {
         setTimeout(wait, 20);
       })();
     });
+  });
+}
+function getJson(port, p) {
+  return new Promise((res, rej) => {
+    const r = http.request({ host: '127.0.0.1', port, path: p, method: 'GET' }, x => {
+      let b = ''; x.on('data', d => b += d); x.on('end', () => { try { res({ status: x.statusCode, body: JSON.parse(b) }); } catch (e) { rej(e); } });
+    });
+    r.on('error', rej); r.end();
   });
 }
 function readJson(file) {
@@ -180,6 +188,28 @@ function readJson(file) {
     } finally {
       await browser.close().catch(() => {});
     }
+
+    // Lunch gap in the Mustang export (11:55 AM then 1:00 PM). Shift that afternoon
+    // match to 65 minutes from now and end the session onto it with Lunch ticked.
+    // The break covers the gap; the queue snapshot is the Lunch card from #77.
+    const mustang = fs.readFileSync(path.join(__dirname, 'fixtures', 'mustang-madness-example-schedule.csv'), 'utf8');
+    c = await connect(srv.port);
+    ack = await c.cmd('scheduleCSV', { text: mustang, name: 'Mustang Madness', date: '2026-11-14' });
+    const mm = c.box.schedule && c.box.schedule.matches || [];
+    const lunchAt = mm.findIndex((m, i) => i && m.time - mm[i - 1].time === 65 * 60 * 1000);
+    check('Mustang import on the server: 6 matches, practice on the first two, no TRUE/FALSE teams', ack.ok && mm.length === 6 && mm[0].practice === true && mm[1].practice === true && mm[4].practice === false && mm[1].teams['5'] === '9205' && !mm[1].teams['1'] && lunchAt === 4, { ok: ack.ok, n: mm.length, lunchAt, teams: mm[1] && mm[1].teams });
+    const when = Date.now() + 65 * 60 * 1000;
+    ack = await c.cmd('scheduleShift', { index: lunchAt, time: when });
+    await c.cmd('goto', { index: lunchAt });
+    await c.cmd('breakLabel', { lunch: true });
+    const ended = await c.cmd('endSession');
+    const br = c.box.state;
+    const afternoon = c.box.schedule.matches[lunchAt];
+    check('lunch gap becomes a Lunch break until the 1:00 PM match (2 min early)', ended.ok && br.kind === 'break' && br.status === 'running' && br.lunch === true && Math.abs(br.breakUntil - (afternoon.time - 2 * 60 * 1000)) < 2000 && br.duration > 60 * 60 * 1000 && br.duration < 65 * 60 * 1000, { ok: ended.ok, err: ended.error, kind: br.kind, status: br.status, lunch: br.lunch, duration: br.duration, breakUntil: br.breakUntil, matchTime: afternoon && afternoon.time });
+    const snap = await getJson(srv.port, '/internal/queue-snapshot');
+    const q = snap.body;
+    check('queue snapshot for that break is Lunch, and the afternoon match is tables 1-4 only', snap.status === 200 && q.timer.lunch === true && q.timer.kind === 'break' && q.timer.status === 'running' && q.schedule.matches[lunchAt].practice === false && q.schedule.matches[lunchAt].teams['1'] === '9501' && q.schedule.matches[lunchAt].teams['5'] == null, { status: snap.status, lunch: q.timer && q.timer.lunch, kind: q.timer && q.timer.kind, teams: q.schedule && q.schedule.matches[lunchAt] && q.schedule.matches[lunchAt].teams });
+    c.close();
   } catch (e) {
     console.log('ERROR', e.stack || e);
     failed++;
