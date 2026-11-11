@@ -176,7 +176,49 @@ function req(method, p, headers, body) {
     check('visibilitychange/pageshow run the revive (wake + audio + link check)', (await main.evaluate(() => (window.__revives || []).length)) > rv0);
     await main.evaluate(async () => { await FLLSound.ctx.suspend(); FLL.updateSoundHint(); });
     const hint = await main.evaluate(() => { const h = document.getElementById('soundHint'); return h && getComputedStyle(h).display !== 'none' ? h.textContent : null; });
-    check('suspended audio shows the "tap to re-enable sound" hint', !!hint && /tap/i.test(hint), hint);
+    check('suspended audio shows the "Sound off, tap to re-enable" banner', !!hint && hint === 'Sound off, tap to re-enable', hint);
+    const iosBits = await main.evaluate(async () => {
+      await FLL.keepAwake();
+      const v = document.querySelector('video');
+      window.__vidPlays = 0;
+      if (v) { const play = v.play.bind(v); v.play = () => { window.__vidPlays++; return play(); }; v.pause(); }
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise(r => setTimeout(r, 250));
+      const c = FLLSound.ensureCtx();
+      await c.suspend();
+      let ran = false;
+      FLLSound.whenEnabled(() => { ran = true; });
+      const before = ran;
+      await FLLSound.resume();
+      await new Promise(r => setTimeout(r, 40));
+      return {
+        wake: FLL.wake, footer: document.getElementById('audioState').textContent, plays: window.__vidPlays,
+        videos: document.querySelectorAll('video').length,
+        videoLabel: FLL.wakeLabel('video'), lockLabel: FLL.wakeLabel('wakelock'),
+        oldIos: FLL.needsRingerHint({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X)', audioSession: null }),
+        newIos: FLL.needsRingerHint({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)', audioSession: { type: 'playback' } }),
+        desktop: FLL.needsRingerHint({ ua: 'Mozilla/5.0 (X11; Linux x86_64)', audioSession: null }),
+        before, after: ran,
+      };
+    });
+    const videoFallback = await main.evaluate(async () => {
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, get: () => false });
+      const mode = await FLL.keepAwake();
+      const v = document.querySelector('video');
+      let plays = 0;
+      if (v) {
+        const play = v.play.bind(v);
+        v.play = () => { plays++; return play(); };
+        v.pause();
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(r => setTimeout(r, 250));
+      }
+      return { mode, videos: document.querySelectorAll('video').length, plays, footer: document.getElementById('audioState').textContent };
+    });
+    check('display names the keep-awake method', /Keep-awake: (hidden video|screen wake lock)/.test(iosBits.footer) && iosBits.videoLabel === 'Keep-awake: hidden video' && iosBits.lockLabel === 'Keep-awake: screen wake lock', iosBits);
+    check('plain http uses one hidden video, and showing the page plays it again', videoFallback.mode === 'video' && videoFallback.videos === 1 && videoFallback.plays >= 1 && /hidden video/.test(videoFallback.footer), videoFallback);
+    check('ringer hint only for an iPhone without audioSession', iosBits.oldIos === true && iosBits.newIos === false && iosBits.desktop === false, iosBits);
+    check('a test chime waits until audio has resumed', iosBits.before === false && iosBits.after === true, iosBits);
     await main.evaluate(async () => { await FLLSound.ctx.resume(); FLL.updateSoundHint(); });
     check('hint hides once audio runs again', await main.evaluate(() => { const h = document.getElementById('soundHint'); return !h || getComputedStyle(h).display === 'none'; }));
 
@@ -234,7 +276,7 @@ function req(method, p, headers, body) {
     const lossy = await cmd('scheduleCSV', { text: 'Match,Time,Table 1,Red,Table 2\n1,9:30,111,222,333\n2,9:35,444,555,666\n', name: 'lossy' });
     await waitFor(() => control.evaluate(() => !document.getElementById('schedWarn').hidden), 3000);
     const w = await control.evaluate(() => ({ hidden: document.getElementById('schedWarn').hidden, text: document.getElementById('schedWarn').textContent, toast: document.getElementById('toast').textContent }));
-    check('CSV import that drops teams shows a warning with the count and the teams', lossy.ok && !w.hidden && /2 teams were dropped/.test(w.text) && /team 222/.test(w.text) && /team 555/.test(w.text) && /dropped/.test(w.toast), w);
+    check('CSV column that is not a table number is named, with the team count, and does not replace Table 2', lossy.ok && !w.hidden && /column "Red" \(2\)/.test(w.text) && /not a table number/.test(w.text) && /Red/.test(w.toast) && await control.evaluate(() => { const t = FLL.schedule.matches[0].teams; return t['1'] === '111' && t['2'] === '333' && !Object.values(t).includes('222'); }), w);
     await cmd('scheduleCSV', { text: fs.readFileSync(SAMPLE, 'utf8'), name: 'clean' }); await sleep(400);
     check('the warning clears after a clean schedule load', await control.evaluate(() => document.getElementById('schedWarn').hidden));
 

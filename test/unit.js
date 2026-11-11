@@ -101,9 +101,23 @@ t('CSV export: cells are quoted for spreadsheets and import back unchanged', () 
   assert.deepStrictEqual(S.parseCSV(out).matches.map(m => m.teams), p.matches.map(m => m.teams));
 });
 t('CSV import lists teams that two columns put on the same table', () => {
-  const p = S.parseCSV('Match,Time,Table 1,Red,Table 2\n1,9:30,111,222,333\n');
+  const p = S.parseCSV('Match,Time,Table 1,Table 2,Field 2\n1,9:30,111,222,333\n');
   assert.deepStrictEqual(p.dropped, [{ row: 2, table: '2', team: '222', keptTeam: '333' }]);
   assert.strictEqual(S.parseCSV('Match,Time,Table 1,Table 2\n1,9:30,111,222\n').dropped, undefined);
+});
+t('wide CSV: a header with no table number does not overwrite another table (#27)', () => {
+  const txt = require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'mustang-madness-example-schedule.csv'), 'utf8');
+  const ok = S.parseCSV(txt, { date: '2026-11-14' });
+  assert.strictEqual(ok.unknownColumns, undefined);
+  assert.strictEqual(ok.dropped, undefined);
+  assert.strictEqual(ok.matches.length, 6);
+  const p = S.parseCSV('Time,Practice?,Table 1,Red,Table 2,Table 5,Table 6\n10:30 AM,FALSE,111,222,333,,\n10:35 AM,TRUE,,,,9205,9206\n');
+  assert.deepStrictEqual(p.matches[0].teams, { 1: '111', 2: '333' });
+  assert.deepStrictEqual(p.matches[1].teams, { 5: '9205', 6: '9206' });
+  assert.strictEqual(p.matches[1].practice, true);
+  assert.deepStrictEqual(p.unknownColumns, [{ column: 'Red', teams: 1 }]);
+  assert.strictEqual(p.dropped, undefined);
+  assert.ok(!Object.values(p.matches[0].teams).includes('222'));
 });
 const ODD_NAMES = ['=HYPERLINK("x")', '+1', '-x', '@x', "'quoted", "''double", 'Servo Stars', 'Bolts, Nuts & "Gears"', 'Robôts 🤖 ñandú 机器人', '<img onerror=x>'];
 t('Formula guard: guardFormula / unquoteFormula are exact inverses', () => {

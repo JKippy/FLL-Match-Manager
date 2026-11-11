@@ -255,14 +255,25 @@
   };
 
   // ---------- Sounds ----------
+  // iOS 17+: "playback" so the ringer/silent switch doesn't mute the match sounds (#19).
+  function armAudioSession() { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} }
+  armAudioSession();
+  // Older iPhones have no audioSession. The Head Ref page shows a one-time hint to turn the ringer on.
+  S.needsRingerHint = function (probe) {
+    const ua = probe && probe.ua != null ? String(probe.ua) : (navigator.userAgent || '');
+    const touchMac = !(probe && probe.ua != null) && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    const ios = /iPhone|iPad|iPod/i.test(ua) || touchMac;
+    if (!ios) return false;
+    const session = probe && Object.prototype.hasOwnProperty.call(probe, 'audioSession') ? probe.audioSession : navigator.audioSession;
+    return !(session && typeof session.type === 'string');
+  };
   // Two synthesized packs: "nature" (default, gentle) and "classic" (FIRST-style). Uploaded files override either.
   const Sound = {
     ctx: null, buffers: {}, raw: {}, versions: {}, cfg: null, pref: { vol: 1, muted: false },
     wanted: false,   // the user enabled sound on this page (a tap): from then on we keep it alive and hint if it drops
     ensureCtx() {
       if (!this.ctx) {
-        // iOS 17+: "playback" so the ringer/silent switch doesn't mute the match sounds.
-        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+        armAudioSession();
         const AC = window.AudioContext || window.webkitAudioContext;
         if (AC) { this.ctx = new AC(); try { this.ctx.onstatechange = () => { S.emit('audio', this.ctx.state); updateHint(); }; } catch (e) {} }
       }
@@ -491,12 +502,18 @@
         v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;bottom:0;left:0';
         document.body.appendChild(v);
       }
-      try { if (v.paused) await v.play(); mode = 'video'; } catch (e) { mode = 'none'; }
+      try { await v.play(); mode = v.paused ? 'none' : 'video'; } catch (e) { mode = 'none'; }
     }
     if (S.wake !== mode) { S.wake = mode; S.emit('wake', mode); }
     return mode;
   }
   S.keepAwake = function () { Wake.want = true; return acquireWake(); };
+  S.wakeLabel = function (mode) {
+    if (mode === 'wakelock') return 'Keep-awake: screen wake lock';
+    if (mode === 'video') return 'Keep-awake: hidden video';
+    if (mode === 'none') return 'Keep-awake: not active';
+    return '';
+  };
   let reviveT = null;
   function revive() {
     if (document.visibilityState === 'hidden') return;
@@ -521,7 +538,7 @@
     hintShown = show;
     if (show && !hintEl && document.body) {
       hintEl = document.createElement('div'); hintEl.id = 'soundHint';   // pointer-events:none: it never steals a click; any tap on the page re-enables sound
-      hintEl.textContent = '🔇 Tap to re-enable sound';
+      hintEl.textContent = 'Sound off, tap to re-enable';
       hintEl.style.cssText = 'position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9999;background:#ffb020;color:#111;font:600 15px/1.2 system-ui,sans-serif;padding:10px 16px;border-radius:999px;box-shadow:0 4px 18px #0008;pointer-events:none';
       document.body.appendChild(hintEl);
     }

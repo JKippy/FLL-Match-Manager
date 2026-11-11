@@ -549,7 +549,13 @@ async function runCommand(msg, c) {
     case 'scheduleCSV': {
       const s = Sched.parseCSV(String(msg.text || ''), { date: msg.date || null, name: msg.name || 'Uploaded schedule', source: msg.source || 'csv' });
       setSchedule(s, true);
-      if (s.dropped) c.send({ t: 'error', error: `Loaded ${s.matches.length} matches, but ${s.dropped.length} team${s.dropped.length === 1 ? ' was' : 's were'} dropped (two columns map to the same table). See the warning under Match schedule.` });
+      const bits = [];
+      if (s.unknownColumns && s.unknownColumns.length) {
+        const n = s.unknownColumns.reduce((a, col) => a + col.teams, 0);
+        bits.push(`${n} team${n === 1 ? '' : 's'} in ${s.unknownColumns.map(col => `"${col.column}" (${col.teams})`).join(', ')} (not a table number)`);
+      }
+      if (s.dropped && s.dropped.length) bits.push(`${s.dropped.length} team${s.dropped.length === 1 ? '' : 's'} dropped (two columns map to the same table)`);
+      if (bits.length) c.send({ t: 'error', error: `Loaded ${s.matches.length} matches, but ${bits.join('; ')}. See the warning under Match schedule.` });
       else c.send({ t: 'notice', text: `Loaded ${s.matches.length} matches` });
       return;
     }
