@@ -11,7 +11,7 @@ const fs = require('fs'), os = require('os'), path = require('path'), net = requ
 const PIN = '4321';
 const SAMPLE = path.join(__dirname, '..', 'public', 'sample-schedule-6tables.csv');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let failed = 0, passed = 0;
+let failed = 0, passed = 0, cmdUid = 0;
 function check(name, ok, detail) {
   ok ? passed++ : failed++;
   console.log((ok ? '  ✓ ' : '  ✗ ') + name + (detail !== undefined ? '  ' + JSON.stringify(detail).slice(0, 400) : ''));
@@ -73,7 +73,7 @@ function connect(port) {
               return new Promise((resolve, reject) => {
                 const timer = setTimeout(() => reject(new Error('ack timeout ' + cmd)), 4000);
                 pending.set(id, m => { clearTimeout(timer); resolve(m); });
-                ws.send(JSON.stringify(Object.assign({ t: 'cmd', cmd, id, uid: 'rel.' + id + '.' + Math.random().toString(36).slice(2) }, extra || {})));
+                ws.send(JSON.stringify(Object.assign({ t: 'cmd', cmd, id, uid: 'rel.' + (++cmdUid) }, extra || {})));
               });
             },
             close() { try { ws.close(); } catch (e) {} },
