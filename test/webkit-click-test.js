@@ -77,51 +77,32 @@ function launchBrowser() {
     await p.waitForSelector('#pinModal.hidden', { state: 'attached' });
     await p.evaluate(() => { window.__acks = []; const o = FLL.cmd.bind(FLL); FLL.cmd = (c, e) => o(c, e).then(r => { window.__acks.push({ cmd: c, ok: r.ok, error: r.error }); return r; }); });
     // Banner and keep-awake strings must fail this WebKit job, not only the Chromium suite.
-    // fs=0 skips requestFullscreen, which can stall headless WebKit. A node-side cap stops a stuck play() from eating the job.
-    const dctx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
-    dctx.setDefaultTimeout(12000);
-    dctx.setDefaultNavigationTimeout(12000);
-    const disp = await dctx.newPage();
-    try {
-      await Promise.race([
-        (async () => {
-          console.log('  .. display goto');
-          await disp.goto(S.base + '/display?role=main&autostart=1&fs=0');
-          console.log('  .. display loaded');
-          await disp.waitForFunction(() => window.FLL && window.FLLSound && FLLSound.ctx);
-          console.log('  .. audio ready');
-          const hint = await disp.evaluate(async () => {
-            await FLLSound.ctx.suspend(); FLL.updateSoundHint();
-            const h = document.getElementById('soundHint');
-            return h && getComputedStyle(h).display !== 'none' ? h.textContent : null;
-          });
-          check('webkit: suspended audio shows "Sound off, tap to re-enable"', hint === 'Sound off, tap to re-enable', hint);
-          const labels = await disp.evaluate(() => ({ video: FLL.wakeLabel('video'), lock: FLL.wakeLabel('wakelock') }));
-          check('webkit: keep-awake labels name the method', labels.video === 'Keep-awake: hidden video' && labels.lock === 'Keep-awake: screen wake lock', labels);
-          console.log('  .. video fallback');
-          const videoFallback = await disp.evaluate(async () => {
-            Object.defineProperty(window, 'isSecureContext', { configurable: true, get: () => false });
-            const mode = await FLL.keepAwake();
-            const v = document.querySelector('video');
-            let plays = 0;
-            if (v) {
-              const play = v.play.bind(v);
-              v.play = () => { plays++; return play(); };
-              v.pause();
-              document.dispatchEvent(new Event('visibilitychange'));
-              await new Promise(r => setTimeout(r, 300));
-            }
-            return { mode, videos: document.querySelectorAll('video').length, plays, footer: document.getElementById('audioState').textContent };
-          });
-          check('webkit: plain http uses one hidden video and replays it', videoFallback.mode === 'video' && videoFallback.videos === 1 && videoFallback.plays >= 1 && /hidden video/.test(videoFallback.footer), videoFallback);
-        })(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('webkit display checks hung')), 40000)),
-      ]);
-    } catch (e) {
-      check('webkit display checks', false, e.message.split('\n')[0]);
-    } finally {
-      await dctx.close().catch(() => {});
-    }
+    // Run them on the control page that is already open. A second page navigation hung headless WebKit on CI.
+    const wakeBits = await p.evaluate(async () => {
+      FLLSound.unlock();
+      await FLLSound.ctx.suspend();
+      FLL.updateSoundHint();
+      const h = document.getElementById('soundHint');
+      const hint = h && getComputedStyle(h).display !== 'none' ? h.textContent : null;
+      const labels = { video: FLL.wakeLabel('video'), lock: FLL.wakeLabel('wakelock') };
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, get: () => false });
+      const mode = await FLL.keepAwake();
+      const v = document.querySelector('video');
+      let plays = 0;
+      if (v) {
+        const play = v.play.bind(v);
+        v.play = () => { plays++; return play(); };
+        v.pause();
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(r => setTimeout(r, 400));
+      }
+      const awake = document.getElementById('awake') ? document.getElementById('awake').textContent : '';
+      await FLLSound.resume();
+      return { hint, labels, mode, videos: document.querySelectorAll('video').length, plays, awake };
+    });
+    check('webkit: suspended audio shows "Sound off, tap to re-enable"', wakeBits.hint === 'Sound off, tap to re-enable', wakeBits.hint);
+    check('webkit: keep-awake labels name the method', wakeBits.labels.video === 'Keep-awake: hidden video' && wakeBits.labels.lock === 'Keep-awake: screen wake lock', wakeBits.labels);
+    check('webkit: plain http uses one hidden video and replays it', wakeBits.mode === 'video' && wakeBits.videos === 1 && wakeBits.plays >= 1 && /hidden video/.test(wakeBits.awake), wakeBits);
     const cmd = (c, e) => p.evaluate(([c, e]) => FLL.cmd(c, e || {}), [c, e]);
     const st = () => p.evaluate(() => ({ status: FLL.state.status, kind: FLL.state.kind, duration: FLL.state.duration, current: FLL.state.match.current, seq: FLL.state.seq }));
     const acks = () => p.evaluate(() => window.__acks.length);
