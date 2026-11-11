@@ -58,7 +58,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     // ---- queue screen, idle ----
     let q = await text(D.Q);
     check('queue idle: Next = Match 1 with 4 teams + names', (await view(D.Q)) === 'queue' && /Next Match 1\b/i.test(q) && ['32778', '27469', '87440', '66894', 'Servo Stars'].every(x => q.includes(x)), q.slice(0, 200));
-    check('queue idle: Then = Match 2, should be queued = Match 3, 4', /Then Match 2\b/i.test(q) && /Should be queued.*Match 3\b.*Match 4\b/i.test(q) && !/Match 5\b/.test(q), q.slice(-260));
+    check('queue idle: Then = Match 2, queuing soon = Match 3, 4', /Then Match 2\b/i.test(q) && /queuing soon.*Match 3\b.*Match 4\b/i.test(q) && !/Match 5\b/.test(q), q.slice(-260));
 
     // ---- full match 1 running: queue shows now playing, then abort ----
     await control.evaluate(() => window.scrollTo(0, 0)); await sleep(200);
@@ -108,7 +108,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await control.check('#brkLunch'); await sleep(900);
     const b1 = await st(), lm = await text(D.main), lc = await text(D.C), lq = await text(D.Q);
     check('#62 Lunch on: projector, pair and queue screens say Lunch instead of Field break', [lm, lc, lq].every(x => /lunch/i.test(x) && !/field break/i.test(x)), { lm: lm.slice(0, 100), lc: lc.slice(0, 100), lq: lq.slice(0, 100) });
-    check('#75 queue during Lunch is on a break and does not call teams', /on a break/i.test(lq) && /do not need to queue/i.test(lq) && !/should be queued/i.test(lq) && !/\bNext\b/.test(lq) && !/79742/.test(lq) && !/6470/.test(lq), lq.slice(0, 240));
+    check('#75 queue during Lunch is on a break and does not call teams', /on a break/i.test(lq) && /do not need to queue/i.test(lq) && !/queuing soon/i.test(lq) && !/\bNext\b/.test(lq) && !/79742/.test(lq) && !/6470/.test(lq), lq.slice(0, 240));
     check('#62 Lunch is a label only: same break, same end time', b1.lunch === true && b1.kind === 'break' && b1.status === 'running' && b1.breakUntil === b0.breakUntil && b1.startAt === b0.startAt && b1.duration === b0.duration);
     check('#62 control status says lunch', /lunch/i.test(await control.textContent('#status')));
     // ---- #61 tap one QR code: only it stays visible; tap again or wait restores all ----
@@ -136,7 +136,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('End break → idle match timer, duration restored', s.kind === 'match' && s.status === 'idle' && s.duration === 4000);
     check('#62 Lunch label clears when that break ends', s.lunch === false && !(await control.isChecked('#brkLunch')));
     q = await text(D.Q);
-    check('#75 End break brings the queue call list back', /Next Match 2\b/i.test(q) && /should be queued/i.test(q) && !/on a break/i.test(q), q.slice(0, 200));
+    check('#75 End break brings the queue call list back', /Next Match 2\b/i.test(q) && /queuing soon/i.test(q) && !/on a break/i.test(q), q.slice(0, 200));
     check('pair C (plays match 2) goes to match-ready; pair A keeps up next', (await view(D.C)) === 'pair-ready' && (await view(D.A)) === 'pair-upnext');
 
     // ---- custom 6 s break runs out silently ----
@@ -168,7 +168,7 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('behind → End match session skips the break', s.kind === 'match' && s.status === 'idle' && notices.some(n => /Behind/.test(n)), notices);
     check('#62 a Lunch tick made before the break survives an End match session that skips the break', s.lunch === true && (await control.isChecked('#brkLunch')));
     q = await text(D.Q);
-    check('#75 Lunch ticked but no break running: queue still calls teams', /should be queued|Next Match/i.test(q) && !/on a break/i.test(q), q.slice(0, 180));
+    check('#75 Lunch ticked but no break running: queue still calls teams', /queuing soon|Next Match/i.test(q) && !/on a break/i.test(q), q.slice(0, 180));
     check('pair A shows Up next Match 3', (await view(D.A)) === 'pair-upnext' && /Match 3\b/.test(await text(D.A)));
     notices.length = 0; await control.click('#breakNext'); await sleep(500);
     check('break until next refused when behind', (await st()).kind === 'match' && notices.some(n => /ERR/.test(n)), notices);
@@ -189,11 +189,11 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     s = await st(); const m4 = await control.evaluate(() => FLL.schedule.matches[3].time);
     check('auto session → break until match 4 − 3 min (target changed to 3)', s.kind === 'break' && s.breakUntil === m4 - 180000, { kind: s.kind, d: s.breakUntil - m4 });
     q = await text(D.Q);
-    check('#75 automatic lunch break: queue stays on a break', /on a break/i.test(q) && /lunch/i.test(q) && !/should be queued/i.test(q) && !/\bNext\b/.test(q), q.slice(0, 220));
+    check('#75 automatic lunch break: queue stays on a break', /on a break/i.test(q) && /lunch/i.test(q) && !/queuing soon/i.test(q) && !/\bNext\b/.test(q), q.slice(0, 220));
     check('#62 the Lunch tick made before the break carries into the next break', s.lunch === true && /lunch/i.test(await text(D.main)) && !/field break/i.test(await text(D.main)));
     await control.uncheck('#brkLunch'); await sleep(800);
     q = await text(D.Q);
-    check('queue count 3 → 3 "should be queued" rows during a field break (not Lunch)', (await D.Q.$$eval('.qqueue .ln', x => x.length)) === 3 && /Next Match 4\b/i.test(q) && /Match 8\b/.test(q) && !/on a break/i.test(q), q.slice(-200));
+    check('queue count 3 → 3 "queuing soon" rows during a field break (not Lunch)', (await D.Q.$$eval('.qqueue .ln', x => x.length)) === 3 && /Next Match 4\b/i.test(q) && /Match 8\b/.test(q) && !/on a break/i.test(q), q.slice(-200));
     await D.Q.screenshot({ path: path.join(SHOTS, 'v3_queue_break_count3.png') });
     await control.check('#brkLunch'); await sleep(400);
     await control.click('#breakEndBtn'); await sleep(600);

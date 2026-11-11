@@ -225,13 +225,13 @@ function poisonedState() {
 
   upstreamMode = 'ok';
   payloadMode = 'break';
-  await remote.waitForFunction(() => /field break/i.test(document.body.innerText) && /should be queued/i.test(document.body.innerText) && /Servo Stars/.test(document.body.innerText), { timeout: 8000 });
+  await remote.waitForFunction(() => /field break/i.test(document.body.innerText) && /queuing soon/i.test(document.body.innerText) && /Servo Stars/.test(document.body.innerText), { timeout: 8000 });
   payloadMode = 'lunch';
   await remote.waitForFunction(() => /on a break/i.test(document.body.innerText) && /do not need to queue/i.test(document.body.innerText), { timeout: 8000 });
   const onBreak = await remote.evaluate(() => document.body.innerText);
-  check('remote queue during Lunch says on a break and does not call teams', /lunch/i.test(onBreak) && /on a break/i.test(onBreak) && /do not need to queue/i.test(onBreak) && !/should be queued/i.test(onBreak) && !/\bNext\b/.test(onBreak) && !/Servo Stars/.test(onBreak) && !/32778/.test(onBreak), onBreak.slice(0, 280));
+  check('remote queue during Lunch says on a break and does not call teams', /lunch/i.test(onBreak) && /on a break/i.test(onBreak) && /do not need to queue/i.test(onBreak) && !/queuing soon/i.test(onBreak) && !/\bNext\b/.test(onBreak) && !/Servo Stars/.test(onBreak) && !/32778/.test(onBreak), onBreak.slice(0, 280));
   payloadMode = 'idle';
-  await remote.waitForFunction(() => /Servo Stars/.test(document.body.innerText) && /should be queued|next/i.test(document.body.innerText) && !/on a break/i.test(document.body.innerText), { timeout: 8000 });
+  await remote.waitForFunction(() => /Servo Stars/.test(document.body.innerText) && /queuing soon|next/i.test(document.body.innerText) && !/on a break/i.test(document.body.innerText), { timeout: 8000 });
   const restored = await remote.evaluate(() => ({
     updated: (document.getElementById('updated').textContent || '').trim(),
     at: document.getElementById('updated').getAttribute('data-at'),

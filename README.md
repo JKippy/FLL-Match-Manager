@@ -45,7 +45,7 @@ Then **tap once** to enable sound and keep the screen awake.
 | `/display?role=main` | **Projector.** Always the timer, plus a large match number, the teams on every active table (grouped by pair), and the match on deck. Ahead/behind is on the Head Ref screen only. |
 | `/display?pair=A` | **Pair screen** (tables 1 & 2). During its own match: a large match number, the big timer, and its two team numbers. Otherwise: **Next match on this field** (the next match *on its own tables*, not the next match overall), the match number, time and big team numbers per table. It switches to the next match as soon as its match ends ("Match N over" shows for 10 s). |
 | `/display?pair=B`, `?pair=C` | Tables 3 & 4, tables 5 & 6 |
-| `/display?role=queue` | **Queuing screen** (silent). Big **Next** and **Then** cards (the next two matches: tables, team numbers, team names, scheduled time), a compact **Now playing** line with the live clock (or the field-break countdown), and a **Should be queued** list of the matches after that (2 by default, set on the control page). Updates live. During a **Lunch** break this list is replaced by an on-break sign (no teams to queue). Ahead/behind is on the Head Ref screen only. |
+| `/display?role=queue` | **Queuing screen** (silent). Big **Next** and **Then** cards (the next two matches: tables, team numbers, team names, scheduled time), a compact **Now playing** line with the live clock (or the field-break countdown), and a **Queuing soon...** list of the matches after that (2 by default, set on the control page). Updates live. During a **Lunch** break this list is replaced by an on-break sign (no teams to queue). Ahead/behind is on the Head Ref screen only. |
 | `/display?role=timer` | Plain countdown only (no schedule) |
 
 Pair screens only play sounds for their own matches. The projector plays them for every match. The queuing screen never plays match sounds (▶ test chimes still work).
@@ -77,7 +77,7 @@ so any layout works.
   "No field break is running", not connected / reconnecting, no reply), a red message appears at the bottom of the control page and it is logged to the console.
 - **Sounds play once:** each start / 30 s / end cue belongs to one run of the timer, and each abort has its own id. Screens play an event once,
   when it happens, and never again on match navigation, reconnects or when a screen joins late.
-- **Sound pack** (Nature / Classic) and **screen look** (Nature / Plain) toggles. Also the number of "should be queued" rows on the queuing screen.
+- **Sound pack** (Nature / Classic) and **screen look** (Nature / Plain) toggles. Also the number of "Queuing soon..." rows on the queuing screen.
 - State (schedule, current match, actual starts, volumes, per-screen settings, uploaded sounds) survives a server restart.
 
 ## Table referees (`/ref`) — READY and Call Head Ref
@@ -236,7 +236,7 @@ Displays bookmark the laptop's IP, so make it stable: in the router's admin page
 
 Teams and parents who are not on the field Wi-Fi can open a **read-only** queue. The match timer, Head Ref page, referee pages, `/api` and `/ws` stay on the laptop's network. A second program serves the public page on **127.0.0.1** only. `cloudflared` is a third program and is the only thing that faces the internet. If that queue server, cloudflared, or the internet misbehaves, the field timer keeps running: the timer never calls them.
 
-The public page matches the gym queue (now playing, next, then, should be queued). If the phone drops the connection it keeps the last queue and shows **Last updated hh:mm**.
+The public page matches the gym queue (now playing, next, then, queuing soon). If the phone drops the connection it keeps the last queue and shows **Last updated hh:mm**.
 
 The hostname for this event is **queue.kippykiyay.com**. That name is the documented default. Set `QUEUE_HOSTNAME` to use a different one, and put the same name in the tunnel config. The server does not hardcode the name anywhere else.
 

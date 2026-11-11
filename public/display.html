@@ -321,7 +321,7 @@
         <div class="qrows">${tablesOf(m).map(t => `<div class="qrow"><span class="qt">${esc(FLL.tableName(t))}</span><span class="qn">${esc(m.teams[t])}</span><span class="qname">${esc(FLL.teamName(m.teams[t]))}</span></div>`).join('')}</div>
       </div>` : `<div class="qcard"><div class="qhead"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="muted">No more matches</span></div></div>`;
     const qd = []; for (let i = up + 2; i < Math.min(L.length, up + 2 + qn); i++) qd.push(L[i]);
-    const queued = qn > 0 ? `<div class="qbox qqueue"><div><span class="k">Should be queued</span>${qd.length ? '' : '<span class="muted">nothing else scheduled</span>'}</div>
+    const queued = qn > 0 ? `<div class="qbox qqueue"><div><span class="k">Queuing soon...</span>${qd.length ? '' : '<span class="muted">nothing else scheduled</span>'}</div>
         ${qd.map(m => `<div class="ln"><b>${esc(FLL.matchLabel(m))}</b><span class="tm2">${esc(FLL.clock(m.time))}</span>${tablesOf(m).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small> ${esc(m.teams[t])}${FLL.teamName(m.teams[t]) ? ` <i>${esc(FLL.teamName(m.teams[t]))}</i>` : ''}</span>`).join(' ')}</div>`).join('')}</div>` : '';
     return `<div class="queue"><div class="qbox qnow">${now}</div><div class="qnext">${card(L[up], 0)}${card(L[up + 1], 1)}</div>${queued}</div>`;
   }

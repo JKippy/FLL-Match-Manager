@@ -145,7 +145,7 @@
     const qn = v.display && v.display.queueCount != null ? v.display.queueCount : 2;
     const qd = [];
     for (let i = up + 2; i < Math.min(L.length, up + 2 + qn); i++) qd.push(L[i]);
-    const queued = qn > 0 ? '<div class="qbox qqueue"><div><span class="k">Should be queued</span>' + (qd.length ? '' : '<span class="muted">nothing else scheduled</span>') + '</div>' + qd.map(m => '<div class="ln"><b>' + esc(matchLabel(m)) + '</b><span class="tm2">' + esc(clock(m.time)) + '</span>' + tablesOf(m).map(t => '<span>' + esc(m.teams[t]) + (teamName(v, m.teams[t]) ? ' ' + esc(teamName(v, m.teams[t])) : '') + '</span>').join(' ') + '</div>').join('') + '</div>' : '';
+    const queued = qn > 0 ? '<div class="qbox qqueue"><div><span class="k">Queuing soon...</span>' + (qd.length ? '' : '<span class="muted">nothing else scheduled</span>') + '</div>' + qd.map(m => '<div class="ln"><b>' + esc(matchLabel(m)) + '</b><span class="tm2">' + esc(clock(m.time)) + '</span>' + tablesOf(m).map(t => '<span>' + esc(m.teams[t]) + (teamName(v, m.teams[t]) ? ' ' + esc(teamName(v, m.teams[t])) : '') + '</span>').join(' ') + '</div>').join('') + '</div>' : '';
     return '<div class="queue"><div class="qbox qnow">' + now + '</div><div class="qnext">' + card(L[up], 0) + card(L[up + 1], 1) + '</div>' + queued + '</div>';
   }
 
