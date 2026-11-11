@@ -76,6 +76,35 @@ function launchBrowser() {
     await p.fill('#pinInput', PIN); await p.click('#pinBtn');
     await p.waitForSelector('#pinModal.hidden', { state: 'attached' });
     await p.evaluate(() => { window.__acks = []; const o = FLL.cmd.bind(FLL); FLL.cmd = (c, e) => o(c, e).then(r => { window.__acks.push({ cmd: c, ok: r.ok, error: r.error }); return r; }); });
+    // Banner and keep-awake strings must fail this WebKit job, not only the Chromium suite.
+    const disp = await ctx.newPage();
+    await disp.goto(S.base + '/display?role=main&autostart=1');
+    await disp.waitForFunction(() => window.FLL && window.FLLSound && FLLSound.ctx, { timeout: 8000 });
+    const hint = await disp.evaluate(async () => {
+      await FLLSound.ctx.suspend(); FLL.updateSoundHint();
+      const h = document.getElementById('soundHint');
+      return h && getComputedStyle(h).display !== 'none' ? h.textContent : null;
+    });
+    check('webkit: suspended audio shows "Sound off, tap to re-enable"', hint === 'Sound off, tap to re-enable', hint);
+    const labels = await disp.evaluate(() => ({ video: FLL.wakeLabel('video'), lock: FLL.wakeLabel('wakelock') }));
+    check('webkit: keep-awake labels name the method', labels.video === 'Keep-awake: hidden video' && labels.lock === 'Keep-awake: screen wake lock', labels);
+    const videoFallback = await disp.evaluate(async () => {
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, get: () => false });
+      const mode = await FLL.keepAwake();
+      const v = document.querySelector('video');
+      let plays = 0;
+      if (v) {
+        const play = v.play.bind(v);
+        v.play = () => { plays++; return play(); };
+        v.pause();
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(r => setTimeout(r, 300));
+      }
+      return { mode, videos: document.querySelectorAll('video').length, plays, footer: document.getElementById('audioState').textContent };
+    });
+    check('webkit: plain http uses one hidden video and replays it', videoFallback.mode === 'video' && videoFallback.videos === 1 && videoFallback.plays >= 1 && /hidden video/.test(videoFallback.footer), videoFallback);
+    await disp.evaluate(async () => { try { await FLLSound.ctx.resume(); } catch (e) {} });
+    await disp.close();
     const cmd = (c, e) => p.evaluate(([c, e]) => FLL.cmd(c, e || {}), [c, e]);
     const st = () => p.evaluate(() => ({ status: FLL.state.status, kind: FLL.state.kind, duration: FLL.state.duration, current: FLL.state.match.current, seq: FLL.state.seq }));
     const acks = () => p.evaluate(() => window.__acks.length);

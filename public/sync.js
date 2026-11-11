@@ -492,7 +492,15 @@
     if (!Wake.want) return S.wake || '';
     let mode = '';
     if ('wakeLock' in navigator && window.isSecureContext) {
-      try { if (!Wake.lock || Wake.lock.released) Wake.lock = await navigator.wakeLock.request('screen'); mode = 'wakelock'; } catch (e) {}
+      try {
+        if (!Wake.lock || Wake.lock.released) {
+          Wake.lock = await Promise.race([
+            navigator.wakeLock.request('screen'),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('wake lock timeout')), 2000)),
+          ]);
+        }
+        mode = 'wakelock';
+      } catch (e) {}
     }
     if (!mode) {
       let v = Wake.video;
@@ -502,7 +510,11 @@
         v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;bottom:0;left:0';
         document.body.appendChild(v);
       }
-      try { await v.play(); mode = v.paused ? 'none' : 'video'; } catch (e) { mode = 'none'; }
+      try {
+        // play() can stall; don't leave revive waiting forever.
+        await Promise.race([v.play(), new Promise((_, rej) => setTimeout(() => rej(new Error('play timeout')), 2000))]);
+        mode = v.paused ? 'none' : 'video';
+      } catch (e) { mode = v && !v.paused ? 'video' : 'none'; }
     }
     if (S.wake !== mode) { S.wake = mode; S.emit('wake', mode); }
     return mode;
