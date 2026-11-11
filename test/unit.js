@@ -58,6 +58,31 @@ t('Nexus link parsing', () => {
   assert.deepStrictEqual(S.parseNexusRef('mm26'), { region: null, event: 'mm26' });
 });
 t('Bad CSV gives a clear error', () => { assert.throws(() => S.parseCSV('foo,bar\n1,2'), /Time/); });
+t('Mustang Madness export: Practice? TRUE/FALSE, AM/PM, tables 1-4 or 5-6, lunch 11:55 AM to 1:00 PM', () => {
+  const txt = require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'mustang-madness-example-schedule.csv'), 'utf8');
+  const p = S.parseCSV(txt, { date: '2026-11-14', name: 'Mustang Madness' });
+  assert.strictEqual(p.dropped, undefined);
+  assert.strictEqual(p.matches.length, 6);
+  assert.deepStrictEqual(p.matches.map(m => m.practice), [true, true, false, false, false, false]);
+  assert.deepStrictEqual(p.matches.map(m => hm(m.time)), [10 * 60 + 30, 10 * 60 + 35, 10 * 60 + 40, 11 * 60 + 55, 13 * 60, 13 * 60 + 5]);
+  assert.strictEqual(p.matches[4].time - p.matches[3].time, 65 * 60 * 1000);
+  assert.deepStrictEqual(p.matches.map(m => m.teams), [
+    { 1: '9101', 2: '9102', 3: '9103', 4: '9104' },
+    { 5: '9205', 6: '9206' },
+    { 1: '9301', 2: '9302', 3: '9303', 4: '9304' },
+    { 5: '9405', 6: '9406' },
+    { 1: '9501', 2: '9502', 3: '9503', 4: '9504' },
+    { 5: '9605', 6: '9606' },
+  ]);
+  const teams = new Set(p.matches.flatMap(m => Object.values(m.teams)));
+  assert.ok(!teams.has('TRUE') && !teams.has('FALSE') && !teams.has(''));
+  p.matches.forEach((m, i) => assert.deepStrictEqual(S.pairsFor(m, S.DEFAULT_LAYOUT), i % 2 ? ['C'] : ['A', 'B']));
+  assert.strictEqual(new Date(p.matches[4].time).getDate(), 14);
+  const yes = S.parseCSV('Time,Practice?,Table 1\n8:45 AM,Yes,100\n8:50 AM,No,200\n', { date: '2026-11-14' });
+  assert.strictEqual(yes.matches[0].practice, true);
+  assert.strictEqual(yes.matches[1].practice, false);
+  assert.deepStrictEqual(yes.matches[0].teams, { 1: '100' });
+});
 t('Sample 6-table schedule: 24 matches, names, 5-min spacing with breaks, A+B / C alternation', () => {
   const txt = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'sample-schedule-6tables.csv'), 'utf8');
   const p = S.parseCSV(txt, { date: '2026-11-14' });
