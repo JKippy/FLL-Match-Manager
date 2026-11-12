@@ -206,6 +206,31 @@ t('parseTime rejects impossible clocks and an invalid date, and keeps Mustang AM
   const sec = new Date(S.parseTime('10:00:15', '2026-11-14'));
   assert.strictEqual(sec.getSeconds(), 15);
 });
+t('a date plus 12-hour, 24-hour, or seconds still imports; a bad time names its row (#28)', () => {
+  const at = (s, hhmm, day, seconds) => {
+    const t = S.parseTime(s);
+    assert.ok(t != null && !Number.isNaN(t), s);
+    const d = new Date(t);
+    assert.strictEqual(d.getHours() * 60 + d.getMinutes(), hhmm, s);
+    if (day != null) assert.strictEqual(d.getDate(), day, s);
+    if (seconds != null) assert.strictEqual(d.getSeconds(), seconds, s);
+  };
+  at('2026-11-14 9:30 AM', 9 * 60 + 30, 14, 0);
+  at('2026-11-14 09:30', 9 * 60 + 30, 14, 0);
+  at('2026-11-14 21:05', 21 * 60 + 5, 14, 0);
+  at('2026-11-14 1:05:09 PM', 13 * 60 + 5, 14, 9);
+  at('2026-11-14T09:30:45', 9 * 60 + 30, 14, 45);
+  at('2026-11-14 9:30:15 PM', 21 * 60 + 30, 14, 15);
+  assert.strictEqual(S.parseTime('2026-11-14 25:99'), null);
+  assert.strictEqual(S.parseTime('2026-11-14 13:00 PM'), null);
+  const txt = 'Time,Table 1\n2026-11-14 9:30 AM,111\n2026-11-14 13:30,222\n2026-11-14 1:05:09 PM,333\n25:99,444\n';
+  const p = S.parseCSV(txt, { date: '2026-11-14' });
+  assert.deepStrictEqual(p.matches.map(m => m.teams['1']), ['111', '222', '333']);
+  assert.deepStrictEqual(p.matches.map(m => hm(m.time)), [9 * 60 + 30, 13 * 60 + 30, 13 * 60 + 5]);
+  assert.strictEqual(new Date(p.matches[2].time).getSeconds(), 9);
+  assert.ok(p.problems.some(x => x.row === 5 && /25:99/.test(x.message) && /Row 5/.test(x.message)), JSON.stringify(p.problems));
+  assert.ok(!p.matches.some(m => Object.values(m.teams).includes('444')));
+});
 t('a blank long-format table is not table "" and a bad time is reported (#28)', () => {
   const p = S.parseCSV('Match,Time,Table,Team\n1,10:00,,1003 - Name\n1,10:00,Table 2,2000\n2,25:99,Table 1,3000\n', { date: '2026-11-14' });
   assert.deepStrictEqual(p.matches[0].teams, { '2': '2000' });
