@@ -132,7 +132,7 @@ Open *Upload or paste a schedule (CSV)* on the control page. Choose a `.csv`/`.t
 Set *Event date* if the file only has times. Accepted (comma, tab or semicolon separated, header row required):
 
 - **Wide** (one row per match): `Match,Time,Table 1,Table 2,…,Table 6`. `Match` is optional, `Time` can be `9:30 AM`, `09:30`, ISO or epoch ms.
-  A team cell may be `938` or `938 - Elemental Robots`. Columns after Time/Match are table/location names, in order (any names work).
+  A team cell may be `938` or `938 - Elemental Robots`. A column maps to a table only when its header is `Table N`, `T N` (or `TN`), or a plain number (`2`). Any other header, including a blank one, does not move those teams onto another table. The control page shows a warning naming that column (or its position) and how many teams were left unplaced.
   See `public/schedule-template.csv`.
 - **Long** (one row per team): `Match,Time,Table,Team` (optional `Type`/`Round` column; "practice" rows are labelled Practice N).
 - **Copied from the Nexus web page:** select the Robot game schedule table on the public page, copy, and paste it. It's tab-separated wide format.
