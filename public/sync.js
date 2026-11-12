@@ -6,8 +6,20 @@
   const perfNow = () => performance.timeOrigin + performance.now();
   const localNow = () => perfNow() + SKEW;
 
+  // crypto.getRandomValues works on plain http:// (Raspberry Pi Firefox, old laptops). crypto.randomUUID() does not:
+  // it is undefined outside a secure context. An id already stored for this browser is kept, including older ones.
+  function freshDeviceId() {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
   let deviceId = null;
-  try { deviceId = localStorage.getItem('fll.device'); if (!deviceId) { deviceId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem('fll.device', deviceId); } } catch (e) { deviceId = 'x' + Math.random().toString(36).slice(2); }
+  try {
+    deviceId = localStorage.getItem('fll.device');
+    if (!deviceId) { deviceId = freshDeviceId(); localStorage.setItem('fll.device', deviceId); }
+  } catch (e) {
+    try { deviceId = freshDeviceId(); } catch (e2) { deviceId = 'x' + Date.now().toString(36); }
+  }
   if (window.__DEVICE_ID) deviceId = window.__DEVICE_ID;
 
   const S = {
@@ -455,12 +467,14 @@
     let last = null, lastSeq = null, seenAbort;
     const played = new Set(), watched = new Set(), held = new Set();
     const fire = (key, name) => { if (played.has(key)) return; played.add(key); onCue(name); };
-    return function check() {
+    // frameR (optional): the remaining time the caller just painted. The cue then fires on that same value,
+    // so END is the frame that shows 0:00 and the warning is the frame that shows 0:30 (#56).
+    return function check(frameR) {
       const st = S.state; if (!st || S.stale || !S.haveClock) { last = null; return; }
       const aid = st.abortId || 0;
       if (seenAbort === undefined) seenAbort = aid;              // whatever happened before we joined is history
       else if (aid !== seenAbort) { seenAbort = aid; if (st.abortAt && S.serverNow() - st.abortAt < 3000) fire('abort:' + aid, 'abort'); }
-      const r = S.remaining(), run = st.runId || 0;
+      const r = typeof frameR === 'number' ? frameR : S.remaining(), run = st.runId || 0;
       if (st.kind === 'break') { lastSeq = st.seq; last = Infinity; return; }   // field breaks are silent
       if (st.seq !== lastSeq) {
         lastSeq = st.seq;

@@ -188,7 +188,7 @@ If your event has the official files (for example from your field kit / FTA / re
 
 ## Reliability (v0.5.1)
 - **Dead links are noticed.** Each screen pings the server every second; with no reply for 2.5 s it shows *reconnecting…*, reconnects, and marks its state stale.
-  While stale it plays **no cues** (the match may have been paused). The server pings every 5 s and drops connections that have been silent for 20 s.
+  While stale it plays **no cues** (the match may have been paused). The server pings every 5 s. The Head Ref device list marks a screen stale after 5 s with no frame, and drops the socket after 12 s, so a short Wi-Fi stall does not remove it.
 - **Server down at 0:00.** If the server is stopped (or the device reports it is offline), screens keep counting from their last synced clock and play END once
   (keyed by the run), with no second END after reconnecting. If the server restarts after a match ended while it was down, it finishes that match
   (done, auto-advance if on, auto-break) exactly as if it had been running; an expired field break ends in the normal *match ready* state.

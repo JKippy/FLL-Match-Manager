@@ -57,6 +57,27 @@ function req(method, p, headers, body) {
   }
   const waitFor = async (fn, ms = 10000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn().catch(() => false)) return true; await sleep(100); } return false; };
   try {
+    // Device id: an id already in localStorage is kept. A new one comes from crypto.getRandomValues, which works on
+    // plain http://. crypto.randomUUID() does not, and Math.random() must not be what picks the id.
+    const keptCtx = await browser.newContext();
+    await keptCtx.addInitScript(() => { localStorage.setItem('fll.device', 'kept-id-99'); });
+    const keptPage = await keptCtx.newPage(); keptPage.on('pageerror', e => { console.log('PAGE ERROR kept-id', e.message); failed++; });
+    await keptPage.goto(`${BASE}/display?role=timer&fs=0`);
+    const kept = await keptPage.evaluate(() => ({ id: FLL.deviceId, stored: localStorage.getItem('fll.device') }));
+    check('a stored device id is kept', kept.id === 'kept-id-99' && kept.stored === 'kept-id-99', kept);
+    await keptCtx.close();
+    const freshCtx = await browser.newContext();
+    await freshCtx.addInitScript(() => {
+      Math.random = () => { throw new Error('Math.random used for a device id'); };
+      crypto.getRandomValues = arr => { arr.fill(0xab); return arr; };
+    });
+    const freshPage = await freshCtx.newPage();
+    const idErr = []; freshPage.on('pageerror', e => idErr.push(e.message));
+    await freshPage.goto(`${BASE}/display?role=timer&fs=0`);
+    const fresh = await freshPage.evaluate(() => ({ id: FLL.deviceId, stored: localStorage.getItem('fll.device') }));
+    check('a new device id comes from crypto.getRandomValues and is stored', fresh.id === 'abababababababab' && fresh.stored === fresh.id && !idErr.some(m => /Math\.random/.test(m)), { fresh, idErr });
+    await freshCtx.close();
+
     const control = await mk(`${BASE}/control`, 'window.__DEVICE_ID="ctl";');
     await control.waitForSelector('#pinModal:not(.hidden)', { state: 'attached' });
     await control.fill('#pinInput', PIN); await control.click('#pinBtn');
@@ -293,6 +314,19 @@ function req(method, p, headers, body) {
     await sleep(Math.max(0, b5.startAt + b5.duration - Date.now()) + 2500);
     const a5 = await st();
     check('auto field break ends on its own and the next match is ready', a5.kind !== 'break' && a5.status === 'idle' && a5.match.current === 1, { kind: a5.kind, status: a5.status, current: a5.match && a5.match.current });
+
+    // #51: a long team name on the queue display wraps (or clamps) and the full name is on the element.
+    const longName = 'The Extraordinarily Determined Robotic Pancake Flippers';
+    await cmd('scheduleCSV', { text: `Time,Table 1\n10:30 AM,1234 - ${longName}\n`, date: '2026-11-14', name: 'long names' });
+    const queue = await mk(`${BASE}/display?role=queue&autostart=1&fs=0`, 'window.__DEVICE_ID="q51";', { width: 1280, height: 720 });
+    check('queue display shows the long team name', await waitFor(() => queue.evaluate(() => !!document.querySelector('.qname'))));
+    const nameInfo = await queue.evaluate(() => {
+      const el = document.querySelector('.qname');
+      const s = getComputedStyle(el);
+      return { title: el.title, text: el.textContent, clamp: s.webkitLineClamp, whiteSpace: s.whiteSpace, h: el.getBoundingClientRect().height, font: parseFloat(s.fontSize) };
+    });
+    check('long queue name is not clipped with no hint: it clamps or wraps, and the title is the full name',
+      nameInfo.text.includes('Pancake Flippers') && nameInfo.title === longName && nameInfo.whiteSpace !== 'nowrap' && nameInfo.clamp === '2' && nameInfo.h >= nameInfo.font, nameInfo);
   } catch (e) { console.log('ERROR', e.stack); failed++; }
   await browser.close().catch(() => {});
   await stopServer('SIGTERM');

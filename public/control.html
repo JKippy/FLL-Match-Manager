@@ -576,7 +576,10 @@
     const d = sch && sch.dropped && sch.dropped.length ? sch.dropped : null;
     if (d) parts.push(`${d.length} team${d.length === 1 ? ' was' : 's were'} dropped because two columns map to the same table: ` +
       d.slice(0, 8).map(x => `team ${x.team} (row ${x.row}, table ${x.table}, replaced by ${x.keptTeam})`).join(', ') + (d.length > 8 ? `, and ${d.length - 8} more` : ''));
-    const txt = parts.length ? '⚠ ' + parts.join('. ') + '. Use headers like "Table 1", "Table 2", and load the file again.' : '';
+    const pr = sch && sch.problems && sch.problems.length ? sch.problems : null;
+    if (pr) parts.push(pr.slice(0, 8).map(p => p.message).join('; ') + (pr.length > 8 ? `; and ${pr.length - 8} more` : ''));
+    const hint = (u || d) ? ' Use headers like "Table 1", "Table 2", and load the file again.' : '';
+    const txt = parts.length ? '⚠ ' + parts.join('. ') + '.' + hint : '';
     if (txt === schedWarnTxt) return; schedWarnTxt = txt;
     const el = $('schedWarn'); el.textContent = txt; el.hidden = !txt;
   }
@@ -729,7 +732,7 @@
     $('clients').innerHTML = d.length ? d.map(c => {
       const lat = c.rtt == null ? '–' : Math.round(c.rtt / 2) + ' ms';
       const latCls = c.rtt == null ? 'muted' : c.rtt < 60 ? 'good' : c.rtt < 200 ? 'meh' : 'bad';
-      const stale = c.lastSeenAgo > 6000 ? ` <span class="bad">(${Math.round(c.lastSeenAgo / 1000)} s)</span>` : '';
+      const stale = c.stale ? ` <span class="bad">stale</span>` : '';
       const p = c.pref || { vol: 1, muted: false };
       return `<tr><td class="n">${esc(c.name)}<div class="muted" style="font-weight:400;font-size:12px">${esc(c.ip)}${stale}</div></td><td class="muted">${esc(c.view || '')}</td><td class="${latCls}">${lat}</td>
         <td><input type="range" class="dispvol" min="0" max="100" value="${Math.round((p.vol == null ? 1 : p.vol) * 100)}" data-dev="${esc(c.deviceId)}"> <span class="muted">${Math.round((p.vol == null ? 1 : p.vol) * 100)}%</span></td>

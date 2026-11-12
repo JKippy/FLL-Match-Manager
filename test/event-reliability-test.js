@@ -6,11 +6,12 @@
 'use strict';
 const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
-const fs = require('fs'), os = require('os'), path = require('path'), net = require('net'), http = require('http');
+const fs = require('fs'), os = require('os'), path = require('path'), net = require('net'), http = require('http'), crypto = require('crypto');
 
 const PIN = '4321';
 const SAMPLE = path.join(__dirname, '..', 'public', 'sample-schedule-6tables.csv');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const waitFor = async (fn, ms) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await sleep(200); } return false; };
 let failed = 0, passed = 0, cmdUid = 0;
 function check(name, ok, detail) {
   ok ? passed++ : failed++;
@@ -57,6 +58,7 @@ function connect(port) {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.t === 'state') box.state = m;
       if (m.t === 'schedule') box.schedule = m.schedule;
+      if (m.t === 'clients') box.clients = m.list;
       if (m.t === 'ack' && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
       if (m.t === 'welcome') box.welcome = m;
     });
@@ -209,6 +211,40 @@ function readJson(file) {
     const snap = await getJson(srv.port, '/internal/queue-snapshot');
     const q = snap.body;
     check('queue snapshot for that break is Lunch, and the afternoon match is tables 1-4 only', snap.status === 200 && q.timer.lunch === true && q.timer.kind === 'break' && q.timer.status === 'running' && q.schedule.matches[lunchAt].practice === false && q.schedule.matches[lunchAt].teams['1'] === '9501' && q.schedule.matches[lunchAt].teams['5'] == null, { status: snap.status, lunch: q.timer && q.timer.lunch, kind: q.timer && q.timer.kind, teams: q.schedule && q.schedule.matches[lunchAt] && q.schedule.matches[lunchAt].teams });
+    // #26: a display that stops sending is marked stale within a few seconds, and dropped after that,
+    // but not on the first missed ping (a short Wi-Fi stall must not remove it).
+    const ghost = await new Promise((resolve, reject) => {
+      const sock = net.connect(srv.port, '127.0.0.1');
+      const key = Buffer.from('fll-stale-test!!').toString('base64');
+      let buf = Buffer.alloc(0), sent = false;
+      const fail = e => { try { sock.destroy(); } catch (e2) {} reject(e); };
+      sock.on('error', fail);
+      sock.on('connect', () => {
+        sock.write('GET /ws HTTP/1.1\r\nHost: 127.0.0.1:' + srv.port + '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ' + key + '\r\nSec-WebSocket-Version: 13\r\n\r\n');
+      });
+      sock.on('data', d => {
+        buf = Buffer.concat([buf, d]);
+        if (sent || !buf.includes('\r\n\r\n')) return;
+        sent = true;
+        const payload = Buffer.from(JSON.stringify({ t: 'hello', role: 'display', name: 'Ghost', view: 'main', deviceId: 'ghost26' }));
+        const mask = crypto.randomBytes(4);
+        const masked = Buffer.alloc(payload.length);
+        for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i & 3];
+        sock.write(Buffer.concat([Buffer.from([0x81, 0x80 | payload.length]), mask, masked]));
+        resolve(sock);
+      });
+      setTimeout(() => { if (!sent) fail(new Error('silent display handshake timeout')); }, 3000);
+    });
+    const ghostOf = () => (c.box.clients || []).find(x => x.deviceId === 'ghost26');
+    const seen = await waitFor(() => Promise.resolve(!!ghostOf()), 4000);
+    const stillThere = ghostOf();
+    check('#26 a display that just went quiet is still listed (not dropped on one missed ping)', seen && stillThere && stillThere.stale !== true, stillThere && { stale: stillThere.stale, ago: stillThere.lastSeenAgo });
+    const marked = await waitFor(() => Promise.resolve(!!(ghostOf() && ghostOf().stale)), 8000);
+    const staleRow = ghostOf();
+    check('#26 the device list marks it stale within a few seconds, while the socket is still up', marked && staleRow && staleRow.lastSeenAgo >= 5000 && staleRow.lastSeenAgo < 12000, staleRow && { stale: staleRow.stale, ago: staleRow.lastSeenAgo });
+    const gone = await waitFor(() => Promise.resolve(!ghostOf()), 10000);
+    check('#26 a display silent for 12 s is dropped, sooner than the old 20 s', gone && !ghostOf());
+    try { ghost.destroy(); } catch (e) {}
     c.close();
   } catch (e) {
     console.log('ERROR', e.stack || e);

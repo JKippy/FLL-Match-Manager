@@ -555,6 +555,7 @@ async function runCommand(msg, c) {
         bits.push(`${n} team${n === 1 ? '' : 's'} in ${s.unknownColumns.map(col => `"${col.column}" (${col.teams})`).join(', ')} (not a table number)`);
       }
       if (s.dropped && s.dropped.length) bits.push(`${s.dropped.length} team${s.dropped.length === 1 ? '' : 's'} dropped (two columns map to the same table)`);
+      if (s.problems && s.problems.length) bits.push(s.problems.slice(0, 4).map(p => p.message).join('; '));
       if (bits.length) c.send({ t: 'error', error: `Loaded ${s.matches.length} matches, but ${bits.join('; ')}. See the warning under Match schedule.` });
       else c.send({ t: 'notice', text: `Loaded ${s.matches.length} matches` });
       return;
@@ -644,19 +645,28 @@ nexusTimer = setInterval(() => { if (store.nexus.auto && store.nexus.url && (tim
 function broadcast(m) { for (const c of clients.values()) c.send(m); }
 function broadcastState() { broadcast(stateMsg()); }
 function broadcastConfig() { for (const c of clients.values()) c.send(configMsg(c)); }
+// A live screen pings every 1 s, so a few-second Wi-Fi stall does not look dead. Silence past this is "stale" in the
+// device list, and the socket is dropped after CLIENT_DROP_MS instead of lingering for 20 s (#26).
+const CLIENT_STALE_MS = 5000, CLIENT_DROP_MS = 12000;
 function broadcastClients() {
-  const list = [...clients.values()].map(c => ({
-    id: c.id, role: c.role, view: c.view, deviceId: c.deviceId, name: c.name, ip: c.ip, rtt: c.rtt, offset: c.offset,
-    lastSeenAgo: now() - c.lastSeen, audio: c.audio, wake: c.wake, pref: c.deviceId ? store.displays[c.deviceId] : null,
-  }));
+  const t = now();
+  const list = [...clients.values()].map(c => {
+    const lastSeenAgo = t - c.lastSeen;
+    return {
+      id: c.id, role: c.role, view: c.view, deviceId: c.deviceId, name: c.name, ip: c.ip, rtt: c.rtt, offset: c.offset,
+      lastSeenAgo, stale: lastSeenAgo > CLIENT_STALE_MS, audio: c.audio, wake: c.wake, pref: c.deviceId ? store.displays[c.deviceId] : null,
+    };
+  });
   for (const c of clients.values()) if (c.role === 'control' && c.authed) c.send({ t: 'clients', list });   // IPs + device ids: Head Ref only
 }
 setInterval(broadcastClients, 1000);
-// Heartbeat: every socket gets a WebSocket ping every 5 s (browsers answer with a pong automatically) and is
-// dropped hard (destroy, no closing handshake) after 20 s without any frame: a half-open Wi-Fi link can't linger.
+// Heartbeat: a WebSocket ping every 5 s (browsers answer with a pong). Drop the check runs every 1 s so a silent
+// socket is removed near CLIENT_DROP_MS, not a full extra ping interval later.
 setInterval(() => {
-  for (const c of clients.values()) { if (now() - c.lastSeen > 20000) c.kill(); else c.ping(); }
-}, 5000);
+  const t = now();
+  for (const c of clients.values()) if (t - c.lastSeen > CLIENT_DROP_MS) c.kill();
+}, 1000);
+setInterval(() => { for (const c of clients.values()) c.ping(); }, 5000);
 
 // ---------- minimal WebSocket (RFC 6455) ----------
 function wsAccept(req, socket) {
@@ -874,6 +884,19 @@ function lanUrls() {
   return out;
 }
 
+// All-same digits (0000, 00000) or a straight ascending/descending run (1234, 12345, 987654) at any length (#53).
+function easyPin(pin) {
+  const s = String(pin || '');
+  if (/^(\d)\1+$/.test(s)) return true;
+  if (!/^\d{4,}$/.test(s)) return false;
+  let up = true, down = true;
+  for (let i = 1; i < s.length; i++) {
+    const d = s.charCodeAt(i) - s.charCodeAt(i - 1);
+    if (d !== 1) up = false;
+    if (d !== -1) down = false;
+  }
+  return up || down;
+}
 function refreshQueueUrl() {
   fs.readFile(QUEUE_URL_FILE, 'utf8', (err, text) => {
     let status = null;
@@ -903,7 +926,7 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`    Table referees:     ${u.url}/ref?table=1   (2, 3 …)`);
   }
   if (!PIN) console.warn('\n  WARNING: no control PIN set. Anyone on this network can start, stop or change the timer.\n           Restart with  npm start -- --pin <your-own-pin>  (choose a new PIN for each event).');
-  else if (/^(\d)\1+$|^(0123|1234|2345|3456|4567|5678|6789|9876|4321)$/.test(PIN)) console.warn(`\n  WARNING: the control PIN is easy to guess. Choose your own PIN for this event.`);
+  else if (easyPin(PIN)) console.warn(`\n  WARNING: the control PIN is easy to guess. Choose your own PIN for this event.`);
   if (PIN) console.log(`\n  Control PIN is set (${PIN.length} digits).`);
   console.log(`  Settings, schedule and uploaded sounds are saved in ${DATA_DIR}`);
   if (urls[0]) {
