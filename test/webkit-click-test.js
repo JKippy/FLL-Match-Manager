@@ -76,6 +76,33 @@ function launchBrowser() {
     await p.fill('#pinInput', PIN); await p.click('#pinBtn');
     await p.waitForSelector('#pinModal.hidden', { state: 'attached' });
     await p.evaluate(() => { window.__acks = []; const o = FLL.cmd.bind(FLL); FLL.cmd = (c, e) => o(c, e).then(r => { window.__acks.push({ cmd: c, ok: r.ok, error: r.error }); return r; }); });
+    // Banner and keep-awake strings must fail this WebKit job, not only the Chromium suite.
+    // Run them on the control page that is already open. A second page navigation hung headless WebKit on CI.
+    const wakeBits = await p.evaluate(async () => {
+      FLLSound.unlock();
+      await FLLSound.ctx.suspend();
+      FLL.updateSoundHint();
+      const h = document.getElementById('soundHint');
+      const hint = h && getComputedStyle(h).display !== 'none' ? h.textContent : null;
+      const labels = { video: FLL.wakeLabel('video'), lock: FLL.wakeLabel('wakelock') };
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, get: () => false });
+      const mode = await FLL.keepAwake();
+      const v = document.querySelector('video');
+      let plays = 0;
+      if (v) {
+        const play = v.play.bind(v);
+        v.play = () => { plays++; return play(); };
+        v.pause();
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(r => setTimeout(r, 400));
+      }
+      const awake = document.getElementById('awake') ? document.getElementById('awake').textContent : '';
+      await FLLSound.resume();
+      return { hint, labels, mode, videos: document.querySelectorAll('video').length, plays, awake };
+    });
+    check('webkit: suspended audio shows "Sound off, tap to re-enable"', wakeBits.hint === 'Sound off, tap to re-enable', wakeBits.hint);
+    check('webkit: keep-awake labels name the method', wakeBits.labels.video === 'Keep-awake: hidden video' && wakeBits.labels.lock === 'Keep-awake: screen wake lock', wakeBits.labels);
+    check('webkit: plain http uses one hidden video and replays it', wakeBits.mode === 'video' && wakeBits.videos === 1 && wakeBits.plays >= 1 && /hidden video/.test(wakeBits.awake), wakeBits);
     const cmd = (c, e) => p.evaluate(([c, e]) => FLL.cmd(c, e || {}), [c, e]);
     const st = () => p.evaluate(() => ({ status: FLL.state.status, kind: FLL.state.kind, duration: FLL.state.duration, current: FLL.state.match.current, seq: FLL.state.seq }));
     const acks = () => p.evaluate(() => window.__acks.length);

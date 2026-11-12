@@ -226,7 +226,8 @@
     put('conn', 'textContent', FLL.connected ? (FLL.synced ? 'connected' : 'syncing…') : 'reconnecting…');
     put('sync', 'textContent', FLL.rtt != null ? `latency ${Math.round(FLL.rtt / 2)} ms` : '');
     const p = FLLSound.pref || {};
-    put('audioState', 'textContent', (p.muted ? '🔇 muted by head ref' : FLLSound.enabled() ? `🔊 sound on${p.vol != null && p.vol !== 1 ? ' (' + Math.round(p.vol * 100) + '%)' : ''}` : '🔇 sound off') + (FLL.wake ? ' · awake: ' + FLL.wake : ''));
+    const awake = FLL.wakeLabel(FLL.wake);
+    put('audioState', 'textContent', (p.muted ? '🔇 muted by head ref' : FLLSound.enabled() ? `🔊 sound on${p.vol != null && p.vol !== 1 ? ' (' + Math.round(p.vol * 100) + '%)' : ''}` : '🔇 sound off') + (awake ? ' · ' + awake : ''));
   }
   // Offline badge: shown while the socket is down after this page has been connected once (the clock keeps counting on its
   // own, so a pause made during the outage is not shown here). Hidden again as soon as the link is back.

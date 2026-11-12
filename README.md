@@ -198,7 +198,7 @@ If your event has the official files (for example from your field kit / FTA / re
 - **◀ ▶ can't skip twice.** NEXT/PREV carry the match they were pressed on; a second press that arrives after the move is refused with a toast.
 - **Input limits.** Schedule files: 1 MB, 20 000 rows, 2 000 matches. Malformed requests get an error reply instead of affecting the server.
 - **Phones and tablets (iOS).** When a screen comes back (unlock, tab switch, focus) it re-requests the wake lock / restarts the keep-awake video, resumes audio
-  and checks the link. If the browser has suspended sound, a small *🔇 Tap to re-enable sound* pill appears; any tap fixes it. (Needs checking on a real iPhone.)
+  and checks the link. If the browser has suspended sound, a *Sound off, tap to re-enable* banner appears; any tap fixes it. The display footer names the keep-awake method (screen wake lock, or a hidden video on plain LAN http). (Needs checking on a real iPhone.)
 
 ## Network setups (Head Ref keeps internet)
 

@@ -161,6 +161,7 @@
     <h1>🏁 FLL Match Timer · Head Referee</h1>
     <div class="sub"><span class="dot" id="dot"></span><span id="conn">connecting…</span>
       <button id="modeBtn" type="button" aria-pressed="false" title="Simple mode shows only the match controls. Saved on this device only.">Simple mode</button></div>
+    <div id="ringerHint" class="full" hidden role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#3a2a10;color:#ffd27a;font-size:14px;line-height:1.35"></div>
   </header>
 
   <section class="card">
@@ -324,6 +325,7 @@
   </div>
 </div>
 <div id="toast"></div>
+<div id="awake" style="position:fixed;left:10px;bottom:8px;z-index:40;pointer-events:none;color:#8a8f98;font:600 13px/1.2 system-ui,sans-serif"></div>
 
 <script src="/vendor/qrcode.js"></script>
 <script src="/sync.js"></script>
@@ -334,8 +336,18 @@
   // Saved PIN: localStorage can throw (private mode, storage off). Then nothing is saved and the PIN prompt asks each time.
   const savedPin = () => { try { return localStorage.getItem('fll.pin') || ''; } catch (e) { return ''; } };
   FLL.connect({ role: 'control', name: 'Head Ref', pin: savedPin() });
-  // Any first tap on this page enables audio, so a referee's call can chime even before START was pressed.
-  document.addEventListener('pointerdown', () => FLLSound.unlock(), { once: true, passive: true });
+  function paintAwake() { const t = FLL.wakeLabel(FLL.wake); const el = $('awake'); if (el && el.textContent !== t) el.textContent = t; }
+  FLL.on('wake', paintAwake);
+  // First tap enables audio and keep-awake. Plain LAN http has no Wake Lock, so the fallback is a hidden video (#14).
+  document.addEventListener('pointerdown', () => { FLLSound.unlock(); FLL.keepAwake().then(paintAwake); }, { once: true, passive: true });
+  try {
+    if (FLL.needsRingerHint() && !localStorage.getItem('fll.ringerHint')) {
+      localStorage.setItem('fll.ringerHint', '1');
+      const el = $('ringerHint');
+      el.hidden = false;
+      el.textContent = 'This iPhone\'s silent switch can mute the timer sounds. Turn the ringer on. iOS 17 and later can play with the switch off.';
+    }
+  } catch (e) {}
   function setText(el, t) { if (typeof el === 'string') el = $(el); if (el.textContent !== t) el.textContent = t; }
   // Same rule for classes / disabled / checked: only touch the DOM when the value changes (per-frame writes swallow clicks in Safari).
   function setCls(el, c) { if (typeof el === 'string') el = $(el); if (el.className !== c) el.className = c; }
@@ -552,15 +564,21 @@
 
   // ----- schedule table -----
   function shiftTxt(ms) { const m = Math.round(Math.abs(ms) / 60000), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mi = m % 60; return (ms < 0 ? '−' : '+') + [d && d + ' d', h && h + ' h', (mi || !(d || h)) && mi + ' min'].filter(Boolean).join(' '); }
-  // CSV import dropped teams (two columns landed on the same table): say so until the next schedule load.
+  // CSV import dropped teams, or a column header was not a table number (#27): say so until the next schedule load.
   let schedWarnTxt = null;
   function renderSchedWarn(sch) {
+    const parts = [];
+    const u = sch && sch.unknownColumns && sch.unknownColumns.length ? sch.unknownColumns : null;
+    if (u) {
+      const n = u.reduce((a, c) => a + c.teams, 0);
+      parts.push(`${n} team${n === 1 ? ' was' : 's were'} not placed because ${u.map(c => `column "${c.column}" (${c.teams})`).join(', ')} ${u.length === 1 ? 'is not a table number' : 'are not table numbers'}`);
+    }
     const d = sch && sch.dropped && sch.dropped.length ? sch.dropped : null;
-    const txt = d ? `⚠ ${d.length} team${d.length === 1 ? ' was' : 's were'} dropped while reading this schedule, because two columns map to the same table: ` +
-      d.slice(0, 8).map(x => `team ${x.team} (row ${x.row}, table ${x.table}, replaced by ${x.keptTeam})`).join(', ') + (d.length > 8 ? `, and ${d.length - 8} more` : '') +
-      '. Check the column headers (use "Table 1", "Table 2", …) and load the file again.' : '';
+    if (d) parts.push(`${d.length} team${d.length === 1 ? ' was' : 's were'} dropped because two columns map to the same table: ` +
+      d.slice(0, 8).map(x => `team ${x.team} (row ${x.row}, table ${x.table}, replaced by ${x.keptTeam})`).join(', ') + (d.length > 8 ? `, and ${d.length - 8} more` : ''));
+    const txt = parts.length ? '⚠ ' + parts.join('. ') + '. Use headers like "Table 1", "Table 2", and load the file again.' : '';
     if (txt === schedWarnTxt) return; schedWarnTxt = txt;
-    const el = $('schedWarn'); el.textContent = txt; el.hidden = !d;
+    const el = $('schedWarn'); el.textContent = txt; el.hidden = !txt;
   }
   function renderSchedule() {
     const sch = FLL.schedule, st = FLL.state;
