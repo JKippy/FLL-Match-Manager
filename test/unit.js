@@ -1,5 +1,7 @@
 // Unit tests for schedule import + pair mapping (no browser needed): node test/unit.js
 const assert = require('assert');
+const { spawnSync } = require('child_process');
+const fs = require('fs'), os = require('os'), path = require('path');
 const S = require('../lib/schedule');
 const fx = n => require('./fixtures/' + n);
 let pass = 0; const t = (name, fn) => { fn(); pass++; console.log('  ✓', name); };
@@ -163,11 +165,109 @@ t('CSV round trip keeps Nexus and sample-schedule names', () => {
   assert.deepStrictEqual(q.matches.map(m => m.teams), p.matches.map(m => m.teams));
 });
 t('CSV export writes a line break inside a team name as one space, so re-import keeps the team', () => {
-  const sched = { teamNames: { '1003': 'Bio\nGlow', '1004': 'Two\r\nLines\rHere' }, matches: [{ n: 1, time: null, teams: { '1': '1003', '2': '1004' } }] };
+  const sched = { teamNames: { '1003': 'Bio\nGlow', '1004': 'Two\r\nLines\rHere', '3101': 'Line\u2028Sep', '3102': 'Para\u2029Sep' }, matches: [
+    { n: 1, time: null, teams: { '1': '1003', '2': '1004' } },
+    { n: 2, time: null, teams: { '1': '3101', '2': '3102' }, practice: true },
+  ] };
   const out = S.toCSV(sched);
-  assert.strictEqual(out.split('\n').filter(Boolean).length, 2, out);   // header + one match row
+  assert.strictEqual(out.split('\n').filter(Boolean).length, 3, out);   // header + two match rows, no raw line break inside a name
+  assert.ok(!/[\u2028\u2029]/.test(out), out);
   const q = S.parseCSV(out, { date: '2026-11-14' });
-  assert.deepStrictEqual(q.matches.map(m => m.teams), [{ '1': '1003', '2': '1004' }]);
-  assert.deepStrictEqual(q.teamNames, { '1003': 'Bio Glow', '1004': 'Two Lines Here' });
+  assert.deepStrictEqual(q.matches.map(m => m.teams), [{ '1': '1003', '2': '1004' }, { '1': '3101', '2': '3102' }]);
+  assert.deepStrictEqual(q.teamNames, { '1003': 'Bio Glow', '1004': 'Two Lines Here', '3101': 'Line Sep', '3102': 'Para Sep' });
+  assert.strictEqual(q.matches[1].practice, true);
+});
+t('quoted line breaks in a team cell import as that team, including a blank line inside the quotes (#52)', () => {
+  const txt = 'Time,Table 1,Table 2\n10:00 AM,"1003 - Line one\nLine two",2000\n10:05 AM,"3101 - Line\u2028Sep","3102 - Para\u2029Sep"\n10:10 AM,"1004 - Line one\n\nLine two",2001\n';
+  const p = S.parseCSV(txt, { date: '2026-11-14' });
+  assert.strictEqual(p.problems, undefined);
+  assert.deepStrictEqual(p.matches.map(m => m.teams), [
+    { '1': '1003', '2': '2000' },
+    { '1': '3101', '2': '3102' },
+    { '1': '1004', '2': '2001' },
+  ]);
+  assert.strictEqual(p.teamNames['1003'], 'Line one Line two');
+  assert.strictEqual(p.teamNames['3101'], 'Line Sep');
+  assert.strictEqual(p.teamNames['3102'], 'Para Sep');
+  assert.strictEqual(p.teamNames['1004'], 'Line one Line two');
+});
+t('parseTime rejects impossible clocks and an invalid date, and keeps Mustang AM/PM (#28)', () => {
+  assert.strictEqual(S.parseTime('25:99', '2026-11-14'), null);
+  assert.strictEqual(S.parseTime('13:00 PM', '2026-11-14'), null);
+  assert.strictEqual(S.parseTime('9:75', '2026-11-14'), null);
+  assert.strictEqual(S.parseTime('10:30:60', '2026-11-14'), null);
+  assert.strictEqual(S.parseTime('10:00', '2026-13-40'), null);
+  assert.ok(!Number.isNaN(S.parseTime('10:00', '2026-13-40')));
+  const am = new Date(S.parseTime('10:30 AM', '2026-11-14'));
+  const pm = new Date(S.parseTime('01:00 PM', '2026-11-14'));
+  assert.strictEqual(am.getHours() * 60 + am.getMinutes(), 10 * 60 + 30);
+  assert.strictEqual(pm.getHours() * 60 + pm.getMinutes(), 13 * 60);
+  assert.strictEqual(am.getDate(), 14);
+  const sec = new Date(S.parseTime('10:00:15', '2026-11-14'));
+  assert.strictEqual(sec.getSeconds(), 15);
+});
+t('a blank long-format table is not table "" and a bad time is reported (#28)', () => {
+  const p = S.parseCSV('Match,Time,Table,Team\n1,10:00,,1003 - Name\n1,10:00,Table 2,2000\n2,25:99,Table 1,3000\n', { date: '2026-11-14' });
+  assert.deepStrictEqual(p.matches[0].teams, { '2': '2000' });
+  assert.ok(!Object.prototype.hasOwnProperty.call(p.matches[0].teams, ''));
+  assert.ok(p.problems.some(x => /1003/.test(x.message) && /no table/.test(x.message)));
+  assert.ok(p.problems.some(x => /25:99/.test(x.message)));
+  assert.ok(!p.matches.some(m => Object.values(m.teams).includes('3000')));
+});
+t('CSV export keeps seconds, the date, practice, and a table name that is still a table number (#28)', () => {
+  const when = new Date(2026, 10, 14, 10, 0, 15).getTime();
+  const sched = {
+    event: { date: '2026-11-14' }, teamNames: { '1': 'Alpha' }, tableNames: { '1': 'T1', '2': 'Red' },
+    matches: [{ n: 1, time: when, teams: { '1': '1', '2': '2' }, practice: true }],
+  };
+  const out = S.toCSV(sched);
+  assert.ok(out.startsWith('Match,Time,Practice?,'), out);
+  assert.ok(out.includes('2026-11-14 10:00:15'), out);
+  assert.ok(out.includes('TRUE'), out);
+  assert.ok(out.includes('T1'), out);
+  assert.ok(!out.includes(',Red'), out);
+  const q = S.parseCSV(out, { date: '2026-11-14' });
+  assert.strictEqual(q.unknownColumns, undefined);
+  assert.strictEqual(q.problems, undefined);
+  assert.strictEqual(q.matches[0].practice, true);
+  assert.deepStrictEqual(q.matches[0].teams, { '1': '1', '2': '2' });
+  assert.strictEqual(q.teamNames['1'], 'Alpha');
+  assert.strictEqual(q.tableNames['1'], 'T1');
+  assert.strictEqual(new Date(q.matches[0].time).getSeconds(), 15);
+  assert.strictEqual(new Date(q.matches[0].time).getDate(), 14);
+});
+t('Nexus import does not concatenate a string time, accept [] as a time, or turn an object into [object Object] (#28)', () => {
+  const step = 150000 + 450000;
+  const s = S.fromNexus(
+    { a: { time: '1000', teams: { '1': '10' } }, b: { teams: { '1': '11' } } },
+    { duration: 150000, resetDuration: 450000, count: 1, maxConcurrentCount: 1 }, {}, {});
+  assert.strictEqual(s.matches[0].time, 1000);
+  assert.strictEqual(s.matches[1].time, 1000 + step);
+  assert.strictEqual(typeof s.matches[1].time, 'number');
+  const badDur = S.fromNexus(
+    { a: { time: 1000, teams: { '1': '10' } }, b: { teams: { '1': '11' } } },
+    { duration: 'nope', resetDuration: 0, count: 1, maxConcurrentCount: 1 }, {}, {});
+  assert.ok(badDur.matches.every(m => Number.isFinite(m.time)));
+  assert.strictEqual(badDur.matches[1].time - badDur.matches[0].time, step);
+  const obj = S.fromNexus({ a: { time: 1000, teams: { '1': { name: 'X' }, '2': '22' } } }, {}, {}, {});
+  assert.deepStrictEqual(obj.matches[0].teams, { '2': '22' });
+  assert.ok(obj.problems.some(p => /not a team number/.test(p.message)));
+  const arr = S.fromNexus(
+    { a: { time: [], teams: { '1': '10' } }, b: { time: 5000, teams: { '1': '11' } } },
+    { duration: 150000, resetDuration: 450000, count: 1, maxConcurrentCount: 1 }, {}, {});
+  assert.strictEqual(arr.matches[0].time, null);
+  assert.strictEqual(arr.matches[1].time, 5000);
+  assert.ok(arr.problems.some(p => /time is not a number/.test(p.message)));
+});
+t('startup easy-PIN warning covers repeated digits and ascending or descending runs of any length (#53)', () => {
+  const server = path.join(__dirname, '..', 'server.js');
+  const warn = pin => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fll-pin-'));
+    const r = spawnSync(process.execPath, [server, '--port', '0', '--pin', pin, '--data', dir], { encoding: 'utf8', timeout: 500 });
+    fs.rmSync(dir, { recursive: true, force: true });
+    return /easy to guess/.test((r.stdout || '') + (r.stderr || ''));
+  };
+  for (const pin of ['1234', '0000', '1111', '4321', '12345', '123456', '00000', '987654', '0123456789']) assert.strictEqual(warn(pin), true, pin);
+  for (const pin of ['918273', '2468', '13579', '123']) assert.strictEqual(warn(pin), false, pin);
 });
 console.log(`\n${pass} unit tests passed`);
