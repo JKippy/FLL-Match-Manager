@@ -350,7 +350,9 @@
 
   function render() {
     const st = FLL.state; let frameR;
-    if (st && (st.status !== 'running' || FLL.samples.length)) {   // never show a running time before the clock is synced
+    // Never show a running clock before the first sync. After that, haveClock stays valid across a reconnect
+    // (samples are cleared until the next pong), so a break that starts in that gap still gets painted.
+    if (st && (st.status !== 'running' || FLL.samples.length || FLL.haveClock)) {
       const r = frameR = FLL.remaining();   // one read per frame: the paint and the cue check use the same value (#56)
       const text = FLL.fmt(r);
       if (text !== lastText) { window.__transitions.push({ text, at: FLL.perfNow(), status: st.status }); lastText = text; }
