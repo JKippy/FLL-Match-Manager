@@ -378,7 +378,7 @@
   }
   const tablesOf = m => Object.keys(m.teams).sort((a, b) => a - b);
   // "Ready" tag for a table whose referee tapped READY (rIdx = the match's index, or null when tags must not show).
-  const rtag = (rIdx, t) => rIdx != null && FLL.isReady(rIdx, t) ? '<span class="rtag" data-ready="' + esc(t) + '">✓ Ready</span>' : '';
+  const rtag = (rIdx, t) => rIdx != null && FLL.isReady(rIdx, t) ? '<span class="rtag" data-ready="' + esc(t) + '">Ready</span>' : '';
   function teamChip(t, num, rIdx) {
     return `<div class="tchip"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(num)}</div><div class="nm">${esc(FLL.teamName(num))}</div>${rtag(rIdx, t)}</div>`;
   }
@@ -465,14 +465,12 @@
           </div>` : `<div class="main" style="display:flex;flex-direction:column;align-items:center;width:100%"><div class="brkpill">${esc(FLL.breakName())}</div><div class="time ${cls}" id="time">${text}</div></div>`, 'main-break');
       } else if (role === 'main' && info && info.focus) {
         const f = info.focus, nx = info.next;
-        const actual = st.match.actualStarts && st.match.actualStarts[f.n];
-        const sub = `Scheduled ${FLL.clock(f.time)}${actual && info.doneIdx == null ? ' · started ' + FLL.clock(actual) : ''}`;
         // Right after a field break: pre-match layout, no break context, just the teams and "Starting soon".
         const soon = st.ready && st.status === 'idle' && st.kind !== 'break' && info.liveIdx == null && info.doneIdx == null;
         $('label').textContent = info.doneIdx != null ? 'Match complete' : info.liveIdx != null ? 'Now playing' : soon ? 'Starting soon' : 'Up next';
         setMain(`<div class="main${soon ? ' prematch' : ''}" style="display:flex;flex-direction:column;align-items:center;width:100%">
             ${soon ? '<div class="soon">Starting soon</div>' : ''}
-            <div class="main-top"><span class="matchno">${esc(FLL.matchLabel(f))}</span><span class="sub">${esc(sub)}</span></div>
+            <div class="main-top"><span class="matchno">${esc(FLL.matchLabel(f))}</span></div>
             <div class="time ${cls}" id="time">${text}</div>
             ${tablesGrouped(f, info.liveIdx == null && info.doneIdx == null && st.status !== 'running' ? info.focusIdx : null)}
             <div class="ondeck">${nx ? `<b>On deck</b>${esc(FLL.matchLabel(nx))} · ${esc(FLL.clock(nx.time))} ${inlineTeams(nx)}` : '<b>Last match</b>'}</div>

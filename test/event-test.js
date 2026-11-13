@@ -115,7 +115,7 @@ async function startServer(DATA) {
     await sleep(3200);
     check('pair A + B show the timer', (await view(D.A)) === 'pair-playing' && (await view(D.B)) === 'pair-playing');
     check('pair C shows up next Match 2 during A+B', (await view(D.C)) === 'pair-upnext' && /Match 2\b/.test(await text(D.C)));
-    check('main shows match 1 running + started time', (await view(D.main)) === 'main' && /started/i.test(await text(D.main)), (await text(D.main)).slice(0, 160));
+    check('main shows match 1 running, no scheduled/started line', (await view(D.main)) === 'main' && !/scheduled|started/i.test(await text(D.main)), (await text(D.main)).slice(0, 160));
     check('ahead/behind stays on control during the match (+3 behind) and off every satellite', await satellitesHideDelta() && /\+3 min behind/.test(await control.textContent('#mDelta')), await control.textContent('#mDelta'));
     check('pair screen match number is foreground, not the dim corner label', await D.A.evaluate(() => {
       const n = document.querySelector('.pairplay .matchno');
