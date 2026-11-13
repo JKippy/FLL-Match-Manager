@@ -97,7 +97,7 @@ The home page (`/`) has a *Table referee (phone)* link with a button per table (
 - **READY** — a big toggle for *that table in that match*. The server holds the state, so every screen sees it, and it survives reloads and reconnects. Pair C refs can ready up while A+B are still playing, because marks belong to the match.
   It is locked while the match runs and after it is over.
 - **Control** shows ✓ ready / … not ready on each team chip, an *x/y ready* or **✓ All ready** pill for the upcoming match, and a per-table status line in the Table referees card.
-- **Audience screens** (projector, *Starting soon*, field-break layout, pair screens' match-ready and Up next) show a green **✓ READY** tag under each ready team, **only before the match starts**.
+- **Audience screens** (projector, *Starting soon*, field-break layout, pair screens' match-ready and Up next) show a green **READY** tag under each ready team, **only before the match starts**.
 - **START with tables not ready** asks "Tables 3, 4 aren't ready. Start anyway?" (combined into one question with the *ahead of schedule* check; `Space` asks the same).
   The check only switches on once a ref page has been opened, so events without table refs work as before. Untick *Ask before START if tables aren't ready* to turn it off; *Clear ready marks* resets them.
 - **Resets:** tags disappear the moment the match starts. Marks are cleared when the match ends, on abort / RESET, when you move to another match (◀ ▶, row click), and when the schedule is replaced or cleared.
