@@ -390,11 +390,37 @@ function checkPin(c, pin) {
 setInterval(() => { const t = now(); for (const [k, g] of pinFails) if (g.until < t - 15 * 60000) pinFails.delete(k); }, 60000).unref();
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
 const refuse = (text, code, info) => { const e = new Error(text); if (code) e.code = code; if (info) e.info = info; throw e; };
+// Timer commands older than this are ignored (#88). 2500 ms is the phone's heartbeat (public/sync.js HB_MS): on a
+// stalled link the phone gives up once a ping goes unanswered that long, and a START delivered after that must not
+// start the match. Age is "server now minus sentAt". The phone sets sentAt from its measured clock offset, not from
+// the phone's wall clock. The venue tunnel is hundreds of ms, so a slow-but-live press is still applied.
+const STALE_CMD_MS = 2500;
+// start covers resume (same command). pause, reset (abort), and the end actions share that path: a late one would
+// stop the match, sound the foghorn, or end a break after the Head Ref had already given up.
+const LATE_CMDS = new Set(['start', 'pause', 'reset', 'breakEnd', 'breakStart', 'endSession']);
+function isLate(msg) {
+  if (!LATE_CMDS.has(msg.cmd) || msg.sentAt == null || msg.sentAt === '') return false;
+  const sent = Number(msg.sentAt);
+  if (!Number.isFinite(sent)) return false;
+  return now() - sent > STALE_CMD_MS;
+}
+function lateText(cmd) {
+  if (cmd === 'start') return 'START arrived too late and was not applied. The match was not started. Press START again.';
+  if (cmd === 'pause') return 'PAUSE arrived too late and was not applied. Press PAUSE again if the match should stop.';
+  if (cmd === 'reset') return 'RESET / ABORT arrived too late and was not applied. The match was not aborted.';
+  if (cmd === 'breakEnd') return 'END BREAK arrived too late and was not applied. Press END BREAK again if you still want to end the break.';
+  if (cmd === 'breakStart') return 'START BREAK arrived too late and was not applied.';
+  return 'End match session arrived too late and was not applied.';
+}
 let lastStep = null;
 const clockTxt = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 async function runCommand(msg, c) {
   const t = now();
   const m = store.match, sch = store.schedule;
+  // A second START for the match that is already running (the original and a retry, either order) must not
+  // move startAt or mint a new runId. Checked before the lateness refusal so a late duplicate is also a no-op.
+  if (msg.cmd === 'start' && timer.kind === 'match' && timer.status === 'running') return;
+  if (isLate(msg)) refuse(lateText(msg.cmd), 'late');
   switch (msg.cmd) {
     // ----- timer -----
     case 'start': {

@@ -57,8 +57,13 @@
     // Commands are never resent automatically. If the reply is lost we say so and let the Head Ref / referee check the screen.
     cmd(cmd, extra) {
       const id = ++cmdSeq, uid = PAGE + '.' + id;
+      // sentAt is the server clock at the moment of the tap (local clock + the measured offset). The server
+      // rejects a timer command that arrives older than the phone's give-up. Wall-clock time is not sent:
+      // a phone can be minutes off, and the offset stays valid after the link drops.
+      const stamped = Object.assign({ t: 'cmd', cmd, id, uid }, extra || {});
+      if (this.haveClock) stamped.sentAt = Math.round(this.serverNow());
       return new Promise(resolve => {
-        if (!this.send(Object.assign({ t: 'cmd', cmd, id, uid }, extra || {}))) {
+        if (!this.send(stamped)) {
           const r = { ok: false, cmd, error: 'Not connected to the timer server (reconnecting…). Check the Wi-Fi and try again.' };
           S.refused(r); return resolve(r);
         }
@@ -75,6 +80,7 @@
   };
 
   let cmdSeq = 0; const pending = new Map();
+  let droppedCmds = [];
   // This page load's random tag (crypto, works on plain-HTTP LAN pages too): tap uids stay unique across devices and reloads.
   const PAGE = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
   const LABELS = { start: 'START', pause: 'PAUSE', reset: 'RESET / ABORT', breakEnd: 'END BREAK', breakStart: 'START BREAK', goto: 'change match', refReady: 'READY', refCall: 'Call Head Ref', refCancel: 'Cancel call', callAck: 'acknowledge call' };
@@ -110,11 +116,14 @@
     try { ws.close(); } catch (e) {}
     S.ws = null; clearTimeout(openT); clearTimeout(pingTimer); pingOutAt = null;
     // A command sent but not answered may or may not have been applied: never resend it, tell the user to check (#46).
+    const dropped = [];
     for (const [id, p] of pending) {
       pending.delete(id);
+      dropped.push(p.cmd);
       const r = { ok: false, cmd: p.cmd, error: 'Connection dropped: “' + label(p.cmd) + '” may not have gone through. Check the screen once reconnected, then tap again only if needed.' };
       S.refused(r); p.done(r);
     }
+    if (dropped.length) { droppedCmds = dropped; S._needReconcile = true; }
     // The device itself reports it is offline (Wi-Fi dropped): keep counting on the local clock (not stale, so the time stays on
     // screen), but mark it offline: END is held at 0:00 until the server confirms (#54). Only a silent link on a "working" network is stale.
     if (navigator.onLine === false) { S.offline = true; stale = false; }
@@ -157,13 +166,35 @@
       case 'refLink': S.refOk = !!m.ok; S.emit('status'); break;   // referee link replaced by the Head Ref
       case 'refKeys': S.refKeys = m.keys || {}; S.emit('refKeys', S.refKeys); break;   // control page only (PIN)
       case 'auth': S.authed = m.authed; S.authError = m.error || ''; S.emit('auth', m.authed, m); S.emit('status'); break;
-      case 'state': { const prev = S.state; S.state = m; if (S.stale || S.offline) { S.stale = false; S.offline = false; S.emit('status'); } S.emit('state', { prev, state: m }); break; }
+      case 'state': {
+        const prev = S.state; S.state = m;
+        if (S.stale || S.offline) { S.stale = false; S.offline = false; S.emit('status'); }
+        if (S._needReconcile) {
+          S._needReconcile = false;
+          const cmds = droppedCmds; droppedCmds = [];
+          // The socket died before the ack. Fresh state says whether START actually happened.
+          if (cmds.includes('start') && !(m.kind === 'match' && m.status === 'running')) {
+            S.emit('error', m.kind === 'match' && m.status === 'paused'
+              ? 'RESUME did not go through. Press RESUME again.'
+              : 'START did not start the match. Press START again.');
+          }
+        }
+        S.emit('state', { prev, state: m });
+        break;
+      }
       case 'config': S.config = m; Sound.applyConfig(m); S.emit('config', m); break;
       case 'schedule': S.schedule = m.schedule; S.emit('schedule', m.schedule); break;
       case 'play': Sound.play(m.cue, true); break;
       case 'clients': S.emit('clients', m.list); break;
       case 'error': console.warn('[FLL] server error:', m.error); S.emit('error', m.error); break;
-      case 'ack': { const p = pending.get(m.id); pending.delete(m.id); if (!m.ok) S.refused(m); if (p) p.done(m); break; }
+      case 'ack': {
+        const p = pending.get(m.id); pending.delete(m.id);
+        // A late START that finds the match already running (the retry won) must not tell the ref to press again.
+        const already = m.code === 'late' && m.cmd === 'start' && S.state && S.state.kind === 'match' && S.state.status === 'running';
+        if (!m.ok && !already) S.refused(m);
+        if (p) p.done(m);
+        break;
+      }
       case 'notice': S.emit('notice', m.text); break;
       case 'calls': S.calls = m.calls || {}; S.emit('calls', S.calls); break;
       case 'chime': S.emit('chime', m); break;   // projector only: a referee called the Head Ref (no table info)
