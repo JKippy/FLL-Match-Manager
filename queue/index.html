@@ -66,6 +66,7 @@
   .waiting { padding:18vh 10px; text-align:center; color:var(--dim); font-size:18px; }
   #nxqr { background:#fff; color:#111; border-radius:18px; padding:12px 12px 10px; display:flex; flex-direction:column; align-items:center; gap:8px;
     width:min(42vh, 28vw, 440px); max-height:100%; box-sizing:border-box; }
+  #nxqr.hidden { display:none; }
   #nxqr { overflow:hidden; }
   #nxqr canvas { width:100%; height:auto; aspect-ratio:1; display:block; background:#fff; image-rendering:pixelated; }
   #nxqrLabel { color:#111; font-weight:800; text-align:center; font-size:clamp(13px, 1.8vw, 22px); line-height:1.15; }
@@ -192,6 +193,11 @@
   const DEFAULT_QR = 'https://fll.nexus/region/fll/event/mm26/leaderboard';
   const DEFAULT_CORNER = 'https://fll.nexus/fll/mm26';
   let qrDrawn = '';
+  // Same lunch sign as queueHtml: a running break with timer.lunch. Any other state hides the code.
+  function onLunch(v) {
+    const st = v && v.timer;
+    return !!(st && st.kind === 'break' && st.status === 'running' && st.lunch);
+  }
   function paintQr() {
     const d = view && view.display;
     const link = d && typeof d.cornerLink === 'string' ? d.cornerLink : DEFAULT_CORNER;
@@ -200,7 +206,7 @@
     const url = (d && typeof d.qrUrl === 'string' ? d.qrUrl : (view ? DEFAULT_QR : '')).trim();
     const box = $('nxqr');
     const label = $('nxqrLabel');
-    if (!url) {
+    if (!url || !onLunch(view)) {
       box.classList.add('hidden');
       document.body.classList.remove('has-qr');
       if (label.textContent) label.textContent = '';
@@ -231,7 +237,7 @@
   }
   function render() {
     document.body.classList.toggle('nature', !view || !view.display || view.display.theme !== 'plain');
-    const onBreak = !!(view && view.timer && view.timer.kind === 'break' && view.timer.status === 'running' && view.timer.lunch);
+    const onBreak = onLunch(view);
     document.body.classList.toggle('onbreak', onBreak);
     $('dot').className = 'dot' + (view ? (failed ? ' wait' : ' ok') : '');
     showUpdated(view);

@@ -1,5 +1,8 @@
-// Nexus QR on the audience screens (#92).
+// Nexus QR on the lunch screen only (#92).
 // The rankings URL and the corner link are display settings (not the Nexus schedule fetch).
+// The code is drawn only while a break is running with timer.lunch set: the gym queue,
+// the hallway queue, and the field timer. Idle, a running match, a plain field break,
+// the projector, and pair screens do not draw it. A blank URL draws nothing, even at lunch.
 //   node test/nexus-qr-test.js
 'use strict';
 const fs = require('fs');
@@ -155,7 +158,7 @@ function emojiHits(file) {
     const hall = await open(chrome, `http://127.0.0.1:${qAddr.port}/?poll=200`, VP);
     check('timer connected', await waitFor(() => timer.page.evaluate(() => !!(FLL.state && FLL.config && FLL.config.display))));
     check('queue connected', await waitFor(() => queue.page.evaluate(() => !!(FLL.state && FLL.config))));
-    check('hallway queue loaded', await waitFor(() => hall.page.evaluate(() => !!document.querySelector('#nxqr canvas') && document.getElementById('nxqrLabel').textContent.length > 0)));
+    check('hallway queue loaded with no QR while idle', await waitFor(() => hall.page.evaluate(() => /No matches on the queue yet/.test(document.body.innerText) && document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === '')));
 
     async function decode(page) {
       const raw = await page.evaluate(() => {
@@ -202,20 +205,22 @@ function emojiHits(file) {
     }
     function fitOk(info) { return info.scrollX && info.scrollY && info.qrInside && info.overlap.length === 0 && info.clipped.length === 0; }
 
-    const idle = await decode(timer.page);
-    check('idle field timer QR decodes to the default rankings URL', idle && idle.text === QR && idle.label === LABEL, idle && { text: idle.text, label: idle.label });
-    check('idle field timer quiet zone is at least 4 modules', idle && idle.quiet >= 3.9, idle && idle.quiet);
-    check('idle field timer QR is large at 1366x768', idle && idle.cssW >= 270 && idle.cssH >= 270, idle && { w: idle.cssW, h: idle.cssH });
+    async function noQr(page) {
+      return page.evaluate(label => {
+        const box = document.getElementById('nxqr');
+        const text = document.getElementById('nxqrLabel').textContent;
+        return !!(box && box.classList.contains('hidden') && text === '' && !document.body.innerText.includes(label));
+      }, LABEL);
+    }
+    check('idle field timer has no QR', await noQr(timer.page));
     let info = await fit(timer.page);
-    check('idle field timer fits at 1366x768', fitOk(info), info);
-    const qDec = await decode(queue.page);
-    check('gym queue QR decodes to the same URL', qDec && qDec.text === QR && qDec.label === LABEL, qDec && qDec.text);
+    check('idle field timer fits at 1366x768', fitOk(info) && info.qrW === 0, info);
+    check('idle gym queue has no QR', await noQr(queue.page));
     info = await fit(queue.page);
-    check('gym queue fits at 1366x768', fitOk(info) && info.qrW >= 270, info);
-    const hDec = await decode(hall.page);
-    check('hallway queue QR decodes to the same URL', hDec && hDec.text === QR && hDec.label === LABEL, hDec && hDec.text);
+    check('gym queue fits at 1366x768', fitOk(info) && info.qrW === 0, info);
+    check('idle hallway queue has no QR', await noQr(hall.page));
     info = await fit(hall.page);
-    check('hallway queue fits at 1366x768', fitOk(info) && info.qrW >= 270, info);
+    check('hallway queue fits at 1366x768', fitOk(info) && info.qrW === 0, info);
     check('projector and pair show the corner link and no QR', await main.page.evaluate(c => document.getElementById('name').textContent === c && document.getElementById('nxqr').classList.contains('hidden'), CORNER)
       && await pair.page.evaluate(c => document.getElementById('name').textContent === c && document.getElementById('nxqr').classList.contains('hidden'), CORNER));
     check('corner link is not the station name; Head Ref still lists that name', await waitFor(() => control.page.evaluate(() => /Pit timer/.test(document.getElementById('clients').innerText)))
@@ -226,14 +231,13 @@ function emojiHits(file) {
     await queue.page.setViewportSize({ width: 1920, height: 1080 });
     await hall.page.setViewportSize({ width: 1920, height: 1080 });
     await sleep(200);
-    const big = await decode(timer.page);
-    check('field timer QR is large at 1920x1080', big && big.cssW >= 360 && big.cssH >= 360, big && { w: big.cssW, h: big.cssH });
+    check('idle field timer has no QR at 1920x1080', await noQr(timer.page));
     info = await fit(timer.page);
-    check('field timer fits at 1920x1080', fitOk(info), info);
+    check('field timer fits at 1920x1080', fitOk(info) && info.qrW === 0, info);
     info = await fit(queue.page);
-    check('gym queue fits at 1920x1080', fitOk(info) && info.qrW >= 360, info);
+    check('gym queue fits at 1920x1080', fitOk(info) && info.qrW === 0, info);
     info = await fit(hall.page);
-    check('hallway queue fits at 1920x1080', fitOk(info) && info.qrW >= 360, info);
+    check('hallway queue fits at 1920x1080', fitOk(info) && info.qrW === 0, info);
     await timer.page.setViewportSize(VP);
     await queue.page.setViewportSize(VP);
     await hall.page.setViewportSize(VP);
@@ -251,7 +255,7 @@ function emojiHits(file) {
     await timer.page.screenshot({ path: path.join(SHOTS, 'field_timer_idle_1366.png') });
 
     const phone = await open(chrome, `http://127.0.0.1:${qAddr.port}/?poll=200`, { width: 390, height: 844 });
-    check('phone hallway shows the QR', await waitFor(() => phone.page.evaluate(() => !document.getElementById('nxqr').classList.contains('hidden') && /Match 1/.test(document.body.innerText))));
+    check('phone hallway has no QR while idle', await waitFor(() => phone.page.evaluate(() => document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === '' && /Match 1/.test(document.body.innerText))));
     info = await fit(phone.page);
     check('phone hallway fits with no scrollbar', fitOk(info), info);
 
@@ -271,10 +275,11 @@ function emojiHits(file) {
     await control.page.evaluate(() => FLL.cmd('start', { force: true }));
     check('START state reached the field timer', await waitFor(() => timer.page.evaluate(() => (window.__qrTicks || []).some(s => s.status === 'running' && s.kind !== 'break'))));
     const started = await timer.page.evaluate(() => window.__qrTicks.find(s => s.status === 'running' && s.kind !== 'break'));
-    check('field timer hides the QR in the same state update as START', started && started.hidden === true, started);
+    check('field timer has no QR in the same state update as START', started && started.hidden === true, started);
     const qRun = await queue.page.evaluate(() => window.__qrTicks.find(s => s.status === 'running' && s.kind !== 'break'));
-    check('gym queue keeps the QR in that same update', qRun && qRun.hidden === false, qRun);
-    check('hallway queue keeps the QR while a match runs', await waitFor(() => hall.page.evaluate(() => /Now playing|Field ready|Match/.test(document.body.innerText) && !document.getElementById('nxqr').classList.contains('hidden'))));
+    check('gym queue has no QR in that same update', qRun && qRun.hidden === true, qRun);
+    check('hallway queue has no QR while a match runs', await waitFor(() => hall.page.evaluate(() => /now playing/i.test(document.body.innerText) && document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === '' && getComputedStyle(document.getElementById('nxqr')).display === 'none')));
+    check('projector and pair have no QR while a match runs', await noQr(main.page) && await noQr(pair.page));
     await timer.page.screenshot({ path: path.join(SHOTS, 'field_timer_running_1366.png') });
     info = await fit(timer.page);
     check('running field timer fits with the QR gone', fitOk(info) && info.qrW === 0, info);
@@ -283,55 +288,80 @@ function emojiHits(file) {
     await control.page.evaluate(() => FLL.cmd('pause'));
     check('paused state arrived', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.status === 'paused')));
     check('paused field timer keeps the QR hidden', await timer.page.evaluate(() => document.getElementById('nxqr').classList.contains('hidden') && FLL.state.status === 'paused'));
-    check('gym queue still shows the QR while paused', await queue.page.evaluate(() => !document.getElementById('nxqr').classList.contains('hidden')));
+    check('gym queue has no QR while paused', await noQr(queue.page));
+    check('hallway queue has no QR while paused', await waitFor(() => noQr(hall.page)));
 
     await control.page.evaluate(() => FLL.cmd('reset'));
-    check('reset returns the field timer to idle with the QR', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.status === 'idle' && !document.getElementById('nxqr').classList.contains('hidden'))));
+    check('reset leaves the field timer idle with no QR', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.status === 'idle' && document.getElementById('nxqr').classList.contains('hidden'))));
+    check('gym queue has no QR after reset', await noQr(queue.page));
 
     await control.page.evaluate(() => FLL.cmd('set', { duration: 1200, label: 'Match' }));
     await sleep(200);
     await control.page.evaluate(() => FLL.cmd('start', { force: true }));
-    check('done brings the QR back', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.status === 'done' && !document.getElementById('nxqr').classList.contains('hidden')), 6000));
-    check('gym queue still shows it when the match is done', await queue.page.evaluate(() => !document.getElementById('nxqr').classList.contains('hidden')));
+    check('done leaves the field timer without a QR', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.status === 'done' && document.getElementById('nxqr').classList.contains('hidden')), 6000));
+    check('gym queue has no QR when the match is done', await noQr(queue.page));
 
     await control.page.evaluate(() => FLL.cmd('endSession'));
-    check('End match session brings the field timer back to a QR', await waitFor(() => timer.page.evaluate(() => {
+    check('End match session does not show the QR', await waitFor(() => timer.page.evaluate(() => {
       const s = FLL.state;
-      return s && !document.getElementById('nxqr').classList.contains('hidden') && (s.kind === 'break' || s.status === 'idle' || s.status === 'done');
+      return s && document.getElementById('nxqr').classList.contains('hidden') && (s.kind === 'break' || s.status === 'idle' || s.status === 'done');
     })));
-    const afterEnd = await timer.page.evaluate(() => ({ kind: FLL.state.kind, status: FLL.state.status, hidden: document.getElementById('nxqr').classList.contains('hidden') }));
-    check('QR is showing after End match session', afterEnd.hidden === false, afterEnd);
+    const afterEnd = await timer.page.evaluate(() => ({ kind: FLL.state.kind, status: FLL.state.status, hidden: document.getElementById('nxqr').classList.contains('hidden'), lunch: !!FLL.state.lunch }));
+    check('QR stays hidden after End match session', afterEnd.hidden === true, afterEnd);
 
-    if (!(await timer.page.evaluate(() => FLL.state.kind === 'break'))) {
-      await control.page.evaluate(() => FLL.cmd('breakStart', { duration: 180000 }));
-      check('break started', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.kind === 'break')));
-    }
-    check('field timer shows the QR during a break', await timer.page.evaluate(() => FLL.state.kind === 'break' && FLL.state.status === 'running' && !document.getElementById('nxqr').classList.contains('hidden')));
-    check('both queues show the QR during a break', await queue.page.evaluate(() => !document.getElementById('nxqr').classList.contains('hidden'))
-      && await waitFor(() => hall.page.evaluate(() => !document.getElementById('nxqr').classList.contains('hidden') && /break/i.test(document.body.innerText))));
+    // A long break so lunch is still running when the pages restart for the Firefox check.
+    await control.page.evaluate(() => FLL.cmd('breakStart', { duration: 1800000 }));
+    check('non-lunch break started', await waitFor(() => timer.page.evaluate(() => FLL.state && FLL.state.kind === 'break' && FLL.state.status === 'running' && FLL.state.lunch !== true)));
+    check('field timer has no QR on a non-lunch break', await noQr(timer.page));
+    check('gym queue has no QR on a non-lunch break', await waitFor(() => queue.page.evaluate(() => /field break/i.test(document.body.innerText) && document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === '')));
+    check('hallway queue has no QR on a non-lunch break', await waitFor(() => hall.page.evaluate(() => /field break/i.test(document.body.innerText) && document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === '')));
+    check('projector and pair have no QR on a non-lunch break', await noQr(main.page) && await noQr(pair.page));
+    await queue.page.screenshot({ path: path.join(SHOTS, 'gym_queue_field_break_1366.png') });
     await control.page.evaluate(() => FLL.cmd('breakLabel', { lunch: true }));
     check('lunch label reached the gym queue', await waitFor(() => queue.page.evaluate(() => /on a break/i.test(document.body.innerText) && /when we're back/i.test(document.body.innerText))));
-    check('hallway lunch shows the QR', await waitFor(() => hall.page.evaluate(() => /on a break/i.test(document.body.innerText) && !document.getElementById('nxqr').classList.contains('hidden'))));
+    check('gym queue shows the QR on lunch', await waitFor(() => queue.page.evaluate(l => !document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === l, LABEL)));
+    check('hallway lunch shows the QR', await waitFor(() => hall.page.evaluate(l => /on a break/i.test(document.body.innerText) && !document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === l, LABEL)));
+    check('field timer shows the QR on lunch', await waitFor(() => timer.page.evaluate(l => FLL.state && FLL.state.lunch === true && FLL.state.kind === 'break' && FLL.state.status === 'running' && !document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === l, LABEL)));
+    check('projector and pair have no QR on lunch', await noQr(main.page) && await noQr(pair.page));
+    const lunchTimer = await decode(timer.page);
+    check('lunch field timer QR decodes to the rankings URL', lunchTimer && lunchTimer.text === QR && lunchTimer.label === LABEL, lunchTimer && { text: lunchTimer.text, label: lunchTimer.label });
+    check('lunch field timer quiet zone is at least 4 modules', lunchTimer && lunchTimer.quiet >= 3.9, lunchTimer && lunchTimer.quiet);
+    check('lunch field timer QR is large at 1366x768', lunchTimer && lunchTimer.cssW >= 270 && lunchTimer.cssH >= 270, lunchTimer && { w: lunchTimer.cssW, h: lunchTimer.cssH });
+    const lunchQueue = await decode(queue.page);
+    check('lunch gym queue QR decodes to the rankings URL', lunchQueue && lunchQueue.text === QR && lunchQueue.label === LABEL, lunchQueue && lunchQueue.text);
+    const lunchHall = await decode(hall.page);
+    check('lunch hallway QR decodes to the rankings URL', lunchHall && lunchHall.text === QR && lunchHall.label === LABEL, lunchHall && lunchHall.text);
+    await queue.page.screenshot({ path: path.join(SHOTS, 'gym_queue_lunch_1366.png') });
+    await hall.page.screenshot({ path: path.join(SHOTS, 'hallway_queue_lunch_1366.png') });
+    await timer.page.screenshot({ path: path.join(SHOTS, 'field_timer_lunch_1366.png') });
     const lunchGap = await queue.page.evaluate(() => {
       const kids = [...document.querySelectorAll('.qbreak-top > *')].map(el => ({ t: el.textContent, w: el.getBoundingClientRect().width }));
       return { kids, empty: kids.some(k => !k.t.trim() || k.w < 2) };
     });
     check('lunch sign has no empty gap where an emoji used to be', lunchGap.kids.length >= 2 && lunchGap.empty === false && lunchGap.kids.some(k => /on a break/i.test(k.t)), lunchGap);
     info = await fit(queue.page);
-    check('gym lunch fits at 1366x768 with the QR', fitOk(info), info);
+    check('gym lunch fits at 1366x768 with the QR', fitOk(info) && info.qrW >= 270, info);
     info = await fit(hall.page);
-    check('hallway lunch fits at 1366x768 with the QR', fitOk(info), info);
+    check('hallway lunch fits at 1366x768 with the QR', fitOk(info) && info.qrW >= 270, info);
+    info = await fit(timer.page);
+    check('field timer lunch fits at 1366x768 with the QR', fitOk(info) && info.qrW >= 270, info);
     await queue.page.setViewportSize({ width: 1920, height: 1080 });
     await hall.page.setViewportSize({ width: 1920, height: 1080 });
+    await timer.page.setViewportSize({ width: 1920, height: 1080 });
     await sleep(150);
+    const lunchBig = await decode(timer.page);
+    check('lunch field timer QR is large at 1920x1080', lunchBig && lunchBig.cssW >= 360 && lunchBig.cssH >= 360, lunchBig && { w: lunchBig.cssW, h: lunchBig.cssH });
     info = await fit(queue.page);
-    check('gym lunch fits at 1920x1080', fitOk(info), info);
+    check('gym lunch fits at 1920x1080', fitOk(info) && info.qrW >= 360, info);
     info = await fit(hall.page);
-    check('hallway lunch fits at 1920x1080', fitOk(info), info);
+    check('hallway lunch fits at 1920x1080', fitOk(info) && info.qrW >= 360, info);
+    info = await fit(timer.page);
+    check('field timer lunch fits at 1920x1080', fitOk(info) && info.qrW >= 360, info);
     await queue.page.setViewportSize(VP);
     await hall.page.setViewportSize(VP);
+    await timer.page.setViewportSize(VP);
     info = await fit(phone.page);
-    check('phone hallway lunch fits', await waitFor(() => phone.page.evaluate(() => /on a break/i.test(document.body.innerText))) && fitOk(await fit(phone.page)), await fit(phone.page));
+    check('phone hallway lunch shows the QR and fits', await waitFor(() => phone.page.evaluate(l => /on a break/i.test(document.body.innerText) && !document.getElementById('nxqr').classList.contains('hidden') && document.getElementById('nxqrLabel').textContent === l, LABEL)) && fitOk(await fit(phone.page)), await fit(phone.page));
 
     const nastyUrl = 'https://fll.nexus/region/fll/event/mm26/leaderboard?q="a"<b>';
     const nastyCorner = 'https://fll.nexus/fll/mm26?x="y"<z>';
@@ -379,9 +409,10 @@ function emojiHits(file) {
     check('too-long URL is logged and does not throw', await waitFor(() => warns.length > 0) && timer.errors.length === errorsBefore, { warns, errors: timer.errors.slice(errorsBefore) });
     check('gym queue also hides a too-long URL with no throw', await waitFor(() => queue.page.evaluate(() => document.getElementById('nxqr').classList.contains('hidden'))) && queue.errors.length === 0);
 
+    check('URL checks are still during lunch', await timer.page.evaluate(() => !!(FLL.state && FLL.state.kind === 'break' && FLL.state.status === 'running' && FLL.state.lunch)));
     await control.page.fill('#qrUrl', '');
     await control.page.dispatchEvent('#qrUrl', 'change');
-    check('blank URL hides the QR and the label on the field timer', await waitFor(() => timer.page.evaluate(l => document.getElementById('nxqr').classList.contains('hidden') && !document.body.innerText.includes(l), LABEL)));
+    check('blank URL hides the QR and the label on the field timer even at lunch', await waitFor(() => timer.page.evaluate(l => FLL.state.lunch === true && document.getElementById('nxqr').classList.contains('hidden') && !document.body.innerText.includes(l), LABEL)));
     check('blank URL hides them on the gym queue', await waitFor(() => queue.page.evaluate(l => document.getElementById('nxqr').classList.contains('hidden') && !document.body.innerText.includes(l), LABEL)));
     check('blank URL hides them on the hallway queue', await waitFor(() => hall.page.evaluate(l => document.getElementById('nxqr').classList.contains('hidden') && !document.body.innerText.includes(l), LABEL)));
 
@@ -424,7 +455,7 @@ function emojiHits(file) {
       const fxTimer = await open(firefox, BASE + '/display?role=timer&autostart=1&fs=0', VP);
       const fxQueue = await open(firefox, BASE + '/display?role=queue&autostart=1&fs=0', VP);
       const fxHall = await open(firefox, `http://127.0.0.1:${qAddr.port}/?poll=200`, VP);
-      check('Firefox field timer connected', await waitFor(() => fxTimer.page.evaluate(() => !!(FLL.state && FLL.config))));
+      check('Firefox field timer connected and still on lunch', await waitFor(() => fxTimer.page.evaluate(() => !!(FLL.state && FLL.config && FLL.state.kind === 'break' && FLL.state.status === 'running' && FLL.state.lunch))));
       const fxDec = await decode(fxTimer.page);
       check('Firefox draws a QR that decodes to the rankings URL', fxDec && fxDec.text === customQr && fxDec.quiet >= 3.9, fxDec && { text: fxDec.text, quiet: fxDec.quiet });
       check('Firefox gym queue draws the QR', await waitFor(async () => { const d = await decode(fxQueue.page); return d && d.text === customQr; }));
