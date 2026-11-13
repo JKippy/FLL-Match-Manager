@@ -89,9 +89,13 @@ async function startServer(DATA) {
 
     // ---- 3. sounds: volume sliders, per-display mute, custom upload, test ----
     async function slide(cue, pct) { await control.evaluate(([c, v]) => { const r = document.querySelector(`input[data-cue="${c}"]`); r.value = v; r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); }, [cue, pct]); }
-    await slide('master', 80); await slide('warn', 50); await slide('end', 150); await sleep(700);
-    const cfgs = await Promise.all(Object.values(D).map(p => p.evaluate(() => [FLLSound.cfg.master, FLLSound.cfg.cues.warn.vol, FLLSound.cfg.cues.end.vol])));
-    check('volumes pushed live to every display', cfgs.every(c => c[0] === 0.8 && c[1] === 0.5 && c[2] === 1.5), cfgs);
+    await slide('master', 80); await slide('warn', 50); await slide('end', 150);
+    // Wait (up to 5 s) for every display to receive all three pushes instead of a fixed sleep; a slow runner can lag behind.
+    const readVols = () => Promise.all(Object.values(D).map(p => p.evaluate(() => [FLLSound.cfg.master, FLLSound.cfg.cues.warn.vol, FLLSound.cfg.cues.end.vol])));
+    const volsOk = c => c[0] === 0.8 && c[1] === 0.5 && c[2] === 1.5;
+    let cfgs = await readVols();
+    for (let i = 0; i < 50 && !cfgs.every(volsOk); i++) { await sleep(100); cfgs = await readVols(); }
+    check('volumes pushed live to every display', cfgs.every(volsOk), cfgs);
     await control.click('#clients button[data-mute="dev-B"]'); await sleep(500);
     await control.evaluate(() => { const r = document.querySelector('#clients input[data-dev="dev-C"]'); r.value = 40; r.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(500);
     check('pair B muted / pair C 40%', await D.B.evaluate(() => FLLSound.pref.muted) && (await D.C.evaluate(() => FLLSound.pref.vol)) === 0.4);
