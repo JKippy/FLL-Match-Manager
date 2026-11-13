@@ -14,9 +14,9 @@
   html,body { margin:0; height:100%; background:#000; color:var(--fg); overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
   body { display:flex; flex-direction:column; user-select:none; -webkit-user-select:none; }
-  header { display:flex; align-items:center; gap:.6em; padding:max(10px, env(safe-area-inset-top)) 16px 6px; font-size:clamp(16px, 3vmin, 34px); color:var(--dim); }
-  #name { color:#fff; font-weight:700; cursor:pointer; }
-  #label { margin-left:auto; text-transform:uppercase; letter-spacing:.12em; font-weight:700; }
+  header { display:flex; align-items:center; gap:.6em; padding:max(10px, env(safe-area-inset-top)) 16px 6px; font-size:clamp(16px, 3vmin, 34px); color:var(--dim); min-width:0; overflow:hidden; }
+  #name { color:#fff; font-weight:700; cursor:pointer; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #label { margin-left:auto; text-transform:uppercase; letter-spacing:.12em; font-weight:700; flex:none; }
   .dot { width:.7em; height:.7em; border-radius:50%; background:var(--end); flex:none; }
   .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
   .pill { padding:.15em .7em; border-radius:999px; font-weight:800; letter-spacing:.02em; text-transform:none; }
@@ -158,18 +158,41 @@
     padding:.35em .9em; border-radius:999px; background:rgba(255,196,0,.14); border:2px solid rgba(255,196,0,.55); color:var(--warn);
     font-size:clamp(14px, 2.4vmin, 30px); font-weight:800; letter-spacing:.04em; pointer-events:none; white-space:nowrap; }
   #offline.hidden { display:none; }
+  /* Rankings QR. The canvas itself has a 4-module white quiet zone; the card is white too. */
+  #nxqr { background:#fff; color:#111; border-radius:18px; padding:12px 12px 10px; display:flex; flex-direction:column; align-items:center; gap:8px;
+    width:min(42vh, 28vw, 440px); max-height:100%; box-sizing:border-box; }
+  body.has-qr .qhead { flex-wrap:wrap; white-space:normal; font-size:clamp(15px, 3.1vmin, 42px); }
+  body.has-qr .qrow { font-size:clamp(12px, 2.3vmin, 28px); }
+  body.has-qr .qrow .qn { font-size:1.9em; }
+  #nxqr { overflow:hidden; }
+  #nxqr canvas { width:100%; height:auto; aspect-ratio:1; display:block; background:#fff; image-rendering:pixelated; }
+  #nxqrLabel { color:#111; font-weight:800; text-align:center; font-size:clamp(13px, 1.7vmin, 22px); line-height:1.15; letter-spacing:0; text-transform:none; }
+  body.has-qr { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr) auto; }
+  body.has-qr header { grid-column:1 / -1; grid-row:1; }
+  body.has-qr main { grid-column:1; grid-row:2; min-width:0; min-height:0; }
+  body.has-qr #nxqr { grid-column:2; grid-row:2; align-self:center; margin:8px 14px 8px 0; }
+  body.has-qr footer { grid-column:1 / -1; grid-row:3; }
+  body.has-qr .time.bigtime { font-size:min(24vw, 40vh); }
+  body.has-qr .time.bigtime.long { font-size:min(18vw, 32vh); }
+  @media (max-width: 800px) {
+    body.has-qr { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto minmax(0,1fr) auto; }
+    body.has-qr #nxqr { grid-column:1; grid-row:2; width:min(56vw, 210px); margin:4px auto 0; justify-self:center; }
+    body.has-qr main { grid-row:3; }
+    body.has-qr footer { grid-row:4; }
+  }
 </style>
 </head>
 <body class="nature">
 <div id="deco"><svg viewBox="0 0 200 200" class="tl" aria-hidden="true"><g fill="#3ddc84"><path d="M10 10 C70 20 120 60 190 150" stroke="#3ddc84" stroke-width="3" fill="none"/><path d="M40 22 C50 -2 85 -4 92 8 C80 24 58 30 40 22Z"/><path d="M44 26 C20 40 22 72 34 78 C46 62 50 44 44 26Z"/><path d="M90 48 C104 22 140 22 146 34 C132 52 110 56 90 48Z"/><path d="M94 54 C70 70 74 102 86 108 C98 90 102 72 94 54Z"/><path d="M138 92 C156 70 188 74 192 88 C176 104 156 104 138 92Z"/><path d="M140 98 C120 118 128 148 140 152 C150 134 150 116 140 98Z"/></g></svg><svg viewBox="0 0 200 200" class="br" aria-hidden="true"><g fill="#3ddc84"><path d="M10 10 C70 20 120 60 190 150" stroke="#3ddc84" stroke-width="3" fill="none"/><path d="M40 22 C50 -2 85 -4 92 8 C80 24 58 30 40 22Z"/><path d="M44 26 C20 40 22 72 34 78 C46 62 50 44 44 26Z"/><path d="M90 48 C104 22 140 22 146 34 C132 52 110 56 90 48Z"/><path d="M94 54 C70 70 74 102 86 108 C98 90 102 72 94 54Z"/><path d="M138 92 C156 70 188 74 192 88 C176 104 156 104 138 92Z"/><path d="M140 98 C120 118 128 148 140 152 C150 134 150 116 140 98Z"/></g></svg></div>
 <header>
   <span class="dot" id="dot"></span>
-  <span id="name">Display</span>
+  <span id="name">https://fll.nexus/fll/mm26</span>
   <span id="delta" class="pill hidden"></span>
   <span id="label"></span>
 </header>
 <main id="main"></main>
-<div id="offline" class="hidden" role="status" aria-live="polite">📡 OFFLINE – time may be off</div>
+<div id="nxqr" class="hidden"><canvas id="nxqrCanvas"></canvas><div id="nxqrLabel"></div></div>
+<div id="offline" class="hidden" role="status" aria-live="polite">OFFLINE – time may be off</div>
 <footer><span id="conn">connecting…</span><span id="sync"></span><span id="audioState"></span></footer>
 
 <div id="picker" class="overlay hidden">
@@ -184,6 +207,8 @@
   <div class="small">Sound and keep-awake need one tap on phones and tablets. For all-day use, also set Auto-Lock / Screen timeout to <b>Never</b> and keep the device plugged in. <a href="/display" style="color:#4c8dff">Change role</a></div>
 </div>
 
+<script src="/vendor/qrcode.js"></script>
+<script src="/vendor/nexus-qr.js"></script>
 <script src="/sync.js"></script>
 <script>
 (function () {
@@ -195,17 +220,17 @@
   const role = pairId ? 'pair' : ['main', 'timer', 'queue'].includes(qrole) ? qrole : '';
   const defaultName = role === 'main' ? 'Projector' : role === 'pair' ? 'Pair ' + pairId : role === 'queue' ? 'Queue' : 'Display';
   let name = qs.get('name') || localStorage.getItem('fll.name.' + (role === 'pair' ? 'pair' + pairId : role)) || defaultName;
-  $('name').textContent = name; $('nameInput').value = name;
+  $('nameInput').value = name;
 
   FLL.connect({ role: 'display', view: role === 'pair' ? 'pair ' + pairId : role || 'picker', name });
 
   // ----- role picker -----
   function showPicker() {
     const pairs = (FLL.config && FLL.config.layout.pairs) || [{ id: 'A', tables: ['1', '2'] }, { id: 'B', tables: ['3', '4'] }, { id: 'C', tables: ['5', '6'] }];
-    $('roles').innerHTML = `<a class="main" href="/display?role=main">📽️ Main / projector<small>Always shows the timer, match, teams, schedule status</small></a>` +
+    $('roles').innerHTML = `<a class="main" href="/display?role=main">Main / projector<small>Always shows the timer, match, teams, schedule status</small></a>` +
       pairs.map(p => `<a href="/display?pair=${encodeURIComponent(p.id)}">Pair ${esc(p.id)}<small>Tables ${esc(p.tables.join(' & '))}</small></a>`).join('') +
-      `<a href="/display?role=queue">📋 Queuing<small>Next two matches, now playing, who to queue</small></a>` +
-      `<a href="/display?role=timer">⏱️ Timer only<small>Plain countdown</small></a>`;
+      `<a href="/display?role=queue">Queuing<small>Next two matches, now playing, who to queue</small></a>` +
+      `<a href="/display?role=timer">Timer only<small>Plain countdown</small></a>`;
     $('picker').classList.remove('hidden');
   }
   if (!role) { showPicker(); FLL.on('config', () => { if (!role) showPicker(); }); }
@@ -215,7 +240,7 @@
   function begin() {
     name = $('nameInput').value.trim() || defaultName;
     localStorage.setItem('fll.name.' + (role === 'pair' ? 'pair' + pairId : role), name);
-    $('name').textContent = name; FLL.name = name;
+    FLL.name = name;
     FLLSound.unlock(); FLLSound.whenEnabled(() => FLLSound.play('test', true));   // resume() is async on Safari
     FLL.keepAwake().then(updateFooter);
     $('tap').classList.add('hidden');
@@ -234,7 +259,7 @@
     put('sync', 'textContent', FLL.rtt != null ? `latency ${Math.round(FLL.rtt / 2)} ms` : '');
     const p = FLLSound.pref || {};
     const awake = FLL.wakeLabel(FLL.wake);
-    put('audioState', 'textContent', (p.muted ? '🔇 muted by head ref' : FLLSound.enabled() ? `🔊 sound on${p.vol != null && p.vol !== 1 ? ' (' + Math.round(p.vol * 100) + '%)' : ''}` : '🔇 sound off') + (awake ? ' · ' + awake : ''));
+    put('audioState', 'textContent', (p.muted ? 'Muted by head ref' : FLLSound.enabled() ? `Sound on${p.vol != null && p.vol !== 1 ? ' (' + Math.round(p.vol * 100) + '%)' : ''}` : 'Sound off') + (awake ? ' · ' + awake : ''));
   }
   // Offline badge: shown while the socket is down after this page has been connected once (the clock keeps counting on its
   // own, so a pause made during the outage is not shown here). Hidden again as soon as the link is back.
@@ -247,6 +272,64 @@
   FLL.on('status', updateOffline); setInterval(updateOffline, 1000);
   FLL.on('status', updateFooter); FLL.on('sync', updateFooter); FLL.on('config', updateFooter); FLL.on('wake', updateFooter); FLL.on('audio', updateFooter);
   FLL.on('config', c => document.body.classList.toggle('nature', !c.display || c.display.theme !== 'plain'));
+  const QR_LABEL = 'Scan for rankings and score breakdowns';
+  const DEFAULT_QR = 'https://fll.nexus/region/fll/event/mm26/leaderboard';
+  const DEFAULT_CORNER = 'https://fll.nexus/fll/mm26';
+  let qrDrawn = '';
+  function cornerLink() {
+    const d = FLL.config && FLL.config.display;
+    return d && typeof d.cornerLink === 'string' ? d.cornerLink : DEFAULT_CORNER;
+  }
+  function rankingsUrl() {
+    const d = FLL.config && FLL.config.display;
+    return d && typeof d.qrUrl === 'string' ? d.qrUrl : DEFAULT_QR;
+  }
+  // Lunch is a running break with the lunch label (#92). The queue role draws the lunch
+  // sign; the field timer draws the Lunch countdown. The projector and pair screens keep
+  // the next-match layout, so they never draw the code.
+  function onLunch(st) {
+    return !!(st && st.kind === 'break' && st.status === 'running' && st.lunch);
+  }
+  function paintNexus() {
+    const link = cornerLink();
+    const nameEl = $('name');
+    if (nameEl.textContent !== link) nameEl.textContent = link;
+    const url = rankingsUrl().trim();
+    const show = !!url && onLunch(FLL.state) && (role === 'queue' || role === 'timer');
+    const box = $('nxqr');
+    const label = $('nxqrLabel');
+    if (!show) {
+      if (!box.classList.contains('hidden')) box.classList.add('hidden');
+      document.body.classList.remove('has-qr');
+      if (label.textContent) label.textContent = '';
+      return;
+    }
+    if (qrDrawn === 'fail:' + url) {
+      box.classList.add('hidden');
+      document.body.classList.remove('has-qr');
+      if (label.textContent) label.textContent = '';
+      return;
+    }
+    if (qrDrawn !== url) {
+      try {
+        drawNexusQr($('nxqrCanvas'), url);
+        qrDrawn = url;
+      } catch (e) {
+        console.warn('QR code could not be drawn: ' + (e && e.message || e));
+        qrDrawn = 'fail:' + url;
+        box.classList.add('hidden');
+        document.body.classList.remove('has-qr');
+        label.textContent = '';
+        return;
+      }
+    }
+    if (label.textContent !== QR_LABEL) label.textContent = QR_LABEL;
+    box.classList.remove('hidden');
+    document.body.classList.add('has-qr');
+  }
+  FLL.on('state', paintNexus);
+  FLL.on('config', paintNexus);
+  paintNexus();
   setInterval(updateFooter, 1000);
 
   // ----- cues: pair screens only sound for their own matches -----

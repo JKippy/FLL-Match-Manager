@@ -273,7 +273,17 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await cmd('scheduleShift', { index: 8, time: Date.now() + 10 * 60000 }); await sleep(300);
     await cmd('breakLabel', { lunch: false });
     const sat = await cmd('endSession');
-    await D.Q.waitForFunction(() => FLL.state && FLL.state.kind === 'break' && /next match at/.test((document.querySelector('.qnow') || {}).innerText || ''), null, { timeout: 8000 });
+    // The queue paints on the next frame, so a state that just arrived can still be sitting under the previous break line.
+    await D.Q.waitForFunction(() => {
+      const st = FLL.state;
+      if (!st || st.kind !== 'break' || st.breakUntil == null) return false;
+      const m = FLL.schedule && FLL.schedule.matches[st.match.current];
+      if (!m || m.time == null) return false;
+      const top = (document.querySelector('.qnow') || {}).innerText || '';
+      const card = (document.querySelector('.qcard.first .tm') || {}).textContent || '';
+      const sched = FLL.clock(m.time), early = FLL.clock(st.breakUntil);
+      return !!(sched && early && sched !== early && card === sched && top.includes(sched) && !top.includes(early));
+    }, null, { timeout: 8000 });
     const times = await D.Q.evaluate(() => {
       const m = FLL.schedule.matches[FLL.state.match.current];
       const top = (document.querySelector('.qnow') || {}).innerText || '';

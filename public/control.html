@@ -299,6 +299,14 @@
       <label class="muted">Look <span class="seg" id="themeSeg"><button data-theme="nature">🌿 Nature</button><button data-theme="plain">Plain</button></span></label>
       <label class="muted">Queuing screen: “Queuing soon...” rows <input type="number" id="queueCount" min="0" max="8" style="width:64px"></label>
     </div>
+    <div class="row">
+      <label class="muted" for="qrUrl">Rankings QR</label>
+      <input id="qrUrl" class="grow" type="text" spellcheck="false" autocomplete="off" value="https://fll.nexus/region/fll/event/mm26/leaderboard">
+    </div>
+    <div class="row">
+      <label class="muted" for="cornerLink">Corner link</label>
+      <input id="cornerLink" class="grow" type="text" spellcheck="false" autocomplete="off" value="https://fll.nexus/fll/mm26">
+    </div>
     <h2 style="margin-top:16px">Add a screen</h2>
     <div class="share">
       <div id="qr"></div>
@@ -494,6 +502,8 @@
   $('packSeg').onclick = e => { const b = e.target.closest('button'); if (b) FLL.cmd('soundPack', { pack: b.dataset.pack }); };
   $('themeSeg').onclick = e => { const b = e.target.closest('button'); if (b) FLL.cmd('displayConfig', { theme: b.dataset.theme }); };
   $('queueCount').onchange = e => FLL.cmd('displayConfig', { queueCount: +e.target.value });
+  $('qrUrl').onchange = e => FLL.cmd('displayConfig', { qrUrl: e.target.value });
+  $('cornerLink').onchange = e => FLL.cmd('displayConfig', { cornerLink: e.target.value });
   function applyBreakCfg(c) {
     const b = c.breaks || {}, a = document.activeElement;
     if (a !== $('brkAhead')) $('brkAhead').value = b.aheadMin;
@@ -505,6 +515,8 @@
     const d = c.display || {};
     [...$('themeSeg').children].forEach(x => x.classList.toggle('on', x.dataset.theme === (d.theme || 'nature')));
     if (a !== $('queueCount')) $('queueCount').value = d.queueCount == null ? 2 : d.queueCount;
+    if (a !== $('qrUrl')) $('qrUrl').value = typeof d.qrUrl === 'string' ? d.qrUrl : 'https://fll.nexus/region/fll/event/mm26/leaderboard';
+    if (a !== $('cornerLink')) $('cornerLink').value = typeof d.cornerLink === 'string' ? d.cornerLink : 'https://fll.nexus/fll/mm26';
     const subs = (c.sound.pack || 'nature') === 'classic' ? CUE_SUB.classic : CUE_SUB.nature;
     for (const k in subs) { const el = document.querySelector(`#volGrid [data-sub="${k}"]`); if (el) el.textContent = subs[k] + (k === 'call' ? ' (this page only)' : ''); }
   }
