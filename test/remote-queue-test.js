@@ -148,13 +148,15 @@ function poisonedState() {
   const requests = [];
   let upstreamMode = 'ok';
   let payloadMode = 'idle';
-  function breakPayload(lunch) {
+  function breakPayload(lunch, mode) {
     const s = poisonedState();
-    const until = Date.now() + 20 * 60000;
-    Object.assign(s.timer, { status: 'running', kind: 'break', lunch: !!lunch, startAt: Date.now(), duration: 20 * 60000, breakUntil: until });
+    const until = mode === 'late' ? Date.now() - 60000 : Date.now() + 20 * 60000;
+    Object.assign(s.timer, { status: 'running', kind: 'break', lunch: !!lunch, startAt: until - 20 * 60000, duration: 20 * 60000, breakUntil: until });
+    if (mode === 'long') s.schedule.teamNames['32778'] = 'The Extraordinarily Determined Robotic Pancake Flippers';
+    if (mode === 'none') s.match.current = 99;
     return s;
   }
-  const upstreamPayload = () => payloadMode === 'lunch' ? breakPayload(true) : payloadMode === 'break' ? breakPayload(false) : poisonedState();
+  const upstreamPayload = () => payloadMode === 'lunch' ? breakPayload(true) : payloadMode === 'lunch-long' ? breakPayload(true, 'long') : payloadMode === 'lunch-none' ? breakPayload(true, 'none') : payloadMode === 'lunch-late' ? breakPayload(true, 'late') : payloadMode === 'break' ? breakPayload(false) : poisonedState();
   const upstream = http.createServer((req, res) => {
     requests.push({ method: req.method, url: req.url });
     if (upstreamMode === 'hang') return;
@@ -227,9 +229,50 @@ function poisonedState() {
   payloadMode = 'break';
   await remote.waitForFunction(() => /field break/i.test(document.body.innerText) && /queuing soon/i.test(document.body.innerText) && /Servo Stars/.test(document.body.innerText), { timeout: 8000 });
   payloadMode = 'lunch';
-  await remote.waitForFunction(() => /on a break/i.test(document.body.innerText) && /do not need to queue/i.test(document.body.innerText), { timeout: 8000 });
+  await remote.waitForFunction(() => /on a break/i.test(document.body.innerText) && /when we're back/i.test(document.body.innerText), { timeout: 8000 });
   const onBreak = await remote.evaluate(() => document.body.innerText);
-  check('remote queue during Lunch says on a break and does not call teams', /lunch/i.test(onBreak) && /on a break/i.test(onBreak) && /do not need to queue/i.test(onBreak) && !/queuing soon/i.test(onBreak) && !/\bNext\b/.test(onBreak) && !/Servo Stars/.test(onBreak) && !/32778/.test(onBreak), onBreak.slice(0, 280));
+  check('remote queue during Lunch says on a break and names the match we return to', /lunch/i.test(onBreak) && /on a break/i.test(onBreak) && /when we're back/i.test(onBreak) && /Match 1\b/.test(onBreak) && /Servo Stars/.test(onBreak) && /32778/.test(onBreak) && !/do not need to queue/i.test(onBreak) && !/queuing soon/i.test(onBreak) && !/\bNext\b/.test(onBreak) && !/11111/.test(onBreak), onBreak.slice(0, 320));
+  const desk = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  const wide = await desk.newPage();
+  wide.on('pageerror', e => { console.log('PAGE ERROR', e.message); failed++; });
+  await wide.goto(`http://127.0.0.1:${addr.port}/?poll=400`, { waitUntil: 'domcontentloaded' });
+  await wide.waitForFunction(() => /when we're back/i.test(document.body.innerText) && /Servo Stars/.test(document.body.innerText), { timeout: 8000 });
+  const fit = await wide.evaluate(() => {
+    const bits = [...document.querySelectorAll('.qbreak-on, .qtime, .brksub, .qback-match, .qrow')];
+    const inside = bits.every(el => { const r = el.getBoundingClientRect(); return r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1; });
+    const on = document.querySelector('.qbreak-on');
+    const os = getComputedStyle(on);
+    return {
+      scrollX: document.documentElement.scrollWidth <= innerWidth + 1,
+      scrollY: document.documentElement.scrollHeight <= innerHeight + 1,
+      inside, nowrap: os.whiteSpace === 'nowrap',
+      lines: on.getBoundingClientRect().height / parseFloat(os.lineHeight),
+    };
+  });
+  check('hallway queue at 1366x768: one line, no scrollbar, nothing clipped', fit.scrollX && fit.scrollY && fit.inside && fit.nowrap && fit.lines < 1.4, fit);
+  payloadMode = 'lunch-late';
+  await wide.waitForFunction(() => { const t = document.querySelector('.qtime'); return t && /^-/.test(t.textContent); }, { timeout: 8000 });
+  const late = await wide.evaluate(() => document.querySelector('.qback').innerText.replace(/\s+/g, ' '));
+  check('a break that has run past its resume time still shows the same next match', /Match 1/.test(late) && /Servo Stars/.test(late) && !/11111/.test(late), late);
+  payloadMode = 'lunch-long';
+  const longName = 'The Extraordinarily Determined Robotic Pancake Flippers';
+  await wide.waitForFunction(n => (document.querySelector('.qname') || {}).title === n, longName, { timeout: 8000 });
+  const longFit = await wide.evaluate(() => {
+    const el = document.querySelector('.qname');
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return { title: el.title, clamp: s.webkitLineClamp || s.lineClamp, whiteSpace: s.whiteSpace, inside: r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1, scrollX: document.documentElement.scrollWidth <= innerWidth + 1 };
+  });
+  check('hallway queue wraps a long team name to two lines without overflowing', longFit.title === longName && longFit.clamp === '2' && longFit.whiteSpace !== 'nowrap' && longFit.inside && longFit.scrollX, longFit);
+  payloadMode = 'lunch-none';
+  await wide.waitForFunction(() => !document.querySelector('.qback') && /on a break/i.test(document.body.innerText), { timeout: 8000 });
+  const none = await wide.evaluate(() => ({
+    back: !!document.querySelector('.qback'),
+    scrollX: document.documentElement.scrollWidth <= innerWidth + 1,
+    scrollY: document.documentElement.scrollHeight <= innerHeight + 1,
+  }));
+  check('hallway queue hides When we\'re back when there is no next match', none.back === false && none.scrollX && none.scrollY, none);
+  await desk.close();
   payloadMode = 'idle';
   await remote.waitForFunction(() => /Servo Stars/.test(document.body.innerText) && /queuing soon|next/i.test(document.body.innerText) && !/on a break/i.test(document.body.innerText), { timeout: 8000 });
   const restored = await remote.evaluate(() => ({

@@ -10,7 +10,10 @@
   :root { --fg:#fff; --run:#3ddc84; --warn:#ffc400; --dim:#8a8f98; --blue:#4c8dff; --card:#111418; --brk:#ff9a2e; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { margin:0; background:#000; color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
-  body { min-height:100%; }
+  html { height:100%; }
+  body { min-height:100%; display:flex; flex-direction:column; }
+  body.onbreak { height:100%; overflow:hidden; }
+  body.onbreak main { flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
   body.nature { background:radial-gradient(ellipse 90% 60% at 50% 115%, #0c2a18 0%, #05140c 45%, #000 85%); --card:rgba(14,24,19,.92); }
   header { display:flex; align-items:center; gap:.6em; padding:max(12px, env(safe-area-inset-top)) 16px 8px; position:sticky; top:0; z-index:2;
     background:rgba(0,0,0,.92); font-size:clamp(15px, 3.4vw, 28px); color:var(--dim); }
@@ -46,12 +49,19 @@
   .qqueue .ln b { min-width:6.5em; }
   .qqueue .tm2 { color:var(--dim); }
   .brkpill { display:inline-block; background:var(--brk); color:#1c0e00; font-weight:900; letter-spacing:.14em; text-transform:uppercase; padding:.2em .9em; border-radius:999px; font-size:clamp(18px, 5vw, 40px); }
-  .qbreak { align-items:center; justify-content:center; text-align:center; min-height:70vh; }
-  .qbreak-card { display:flex; flex-direction:column; align-items:center; gap:12px; padding:8px 12px; }
-  .qbreak-on { font-size:clamp(40px, 12vw, 96px); font-weight:900; line-height:.95; }
-  .qbreak-stop { font-size:clamp(18px, 5vw, 36px); font-weight:800; }
-  .qtime { font-size:clamp(48px, 16vw, 120px); font-weight:900; color:var(--brk); font-variant-numeric:tabular-nums; line-height:.9; }
-  .brksub { font-size:clamp(16px, 4.2vw, 28px); font-weight:700; }
+  .qbreak { align-items:stretch; justify-content:center; text-align:center; width:100%; flex:1; min-height:0; }
+  .qbreak-card { display:flex; flex-direction:column; align-items:center; gap:8px; padding:4px 0; width:100%; }
+  .qbreak-top { display:flex; align-items:center; justify-content:center; gap:.6em; width:100%; }
+  .qbreak-on { font-size:clamp(36px, 6.6vw, 112px); font-weight:900; line-height:1; white-space:nowrap; }
+  .qtime { font-size:clamp(52px, 10vw, 160px); font-weight:900; color:var(--brk); font-variant-numeric:tabular-nums; line-height:.9; }
+  .brksub { font-size:clamp(16px, 2.2vw, 32px); font-weight:700; }
+  .qbreak .brksub { white-space:nowrap; }
+  .qback { width:100%; margin-top:10px; text-align:left; min-width:0; }
+  .qback-k { text-align:center; font-weight:900; letter-spacing:.14em; text-transform:uppercase; color:var(--warn); font-size:clamp(13px, 1.8vw, 22px); }
+  .qback-match { text-align:center; font-weight:900; font-size:clamp(24px, 3.4vw, 48px); margin:2px 0 6px; }
+  .qback-teams { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap:4px 16px; }
+  .qbreak .qrow { border-top:0; padding:2px 0; }
+  .qbreak .qname { flex:1 1 auto; min-width:0; color:#cfd4da; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow-wrap:anywhere; white-space:normal; }
   .muted { color:var(--dim); }
   .waiting { padding:18vh 10px; text-align:center; color:var(--dim); font-size:18px; }
   @media (max-width: 720px) {
@@ -126,14 +136,17 @@
     const st = v.timer || {}, mm = v.match || {}, L = sch.matches;
     const brk = st.kind === 'break' && st.status === 'running';
     const text = fmt(remaining(v));
-    // Lunch is the operator's break mode (#75). While that break is running, do not tell teams to queue.
-    if (brk && st.lunch) {
-      const when = st.breakUntil ? '<div class="brksub">Matches resume at <b>' + esc(clock(st.breakUntil)) + '</b></div>' : '';
-      return '<div class="queue qbreak"><div class="qbreak-card"><div class="brkpill">Lunch</div><div class="qbreak-on">On a break</div><div class="qbreak-stop">Teams do not need to queue</div><div class="qtime">' + esc(text) + '</div>' + when + '</div></div>';
-    }
     const liveIdx = (!brk && (st.status === 'running' || st.status === 'paused') && mm.live != null) ? mm.live : null;
     const doneIdx = st.status === 'done' && mm.live != null ? mm.live : null;
     const up = liveIdx != null ? liveIdx + 1 : (doneIdx != null && mm.current === doneIdx) ? doneIdx + 1 : (mm.current || 0);
+    // Lunch is the operator's break mode (#75). The sign uses the width of the screen, and names the match
+    // the break returns to. That index does not follow the clock, so an early or late break stays on it.
+    if (brk && st.lunch) {
+      const when = st.breakUntil ? '<div class="brksub">Matches resume at <b>' + esc(clock(st.breakUntil)) + '</b></div>' : '';
+      const nxt = L[up];
+      const back = nxt ? '<div class="qback"><div class="qback-k">When we\'re back</div><div class="qback-match">' + esc(matchLabel(nxt)) + '</div><div class="qback-teams">' + tablesOf(nxt).map(t => { const nm = teamName(v, nxt.teams[t]); return '<div class="qrow"><span class="qt">' + esc(tableName(v, t)) + '</span><span class="qn">' + esc(nxt.teams[t]) + '</span><span class="qname" title="' + esc(nm) + '">' + esc(nm) + '</span></div>'; }).join('') + '</div></div>' : '';
+      return '<div class="queue qbreak"><div class="qbreak-card"><div class="qbreak-top"><div class="brkpill">Lunch</div><div class="qbreak-on">On a break</div></div><div class="qtime">' + esc(text) + '</div>' + when + back + '</div></div>';
+    }
     const teamsInline = m => tablesOf(m).map(t => '<span class="t"><small>' + esc(tableName(v, t)) + '</small> ' + esc(m.teams[t]) + '</span>').join(' ');
     let now;
     if (liveIdx != null && L[liveIdx]) now = '<span class="k">Now playing</span><b>' + esc(matchLabel(L[liveIdx])) + '</b> ' + teamsInline(L[liveIdx]) + '<span class="clock">' + esc(text) + '</span>';
@@ -152,6 +165,7 @@
   function render() {
     document.body.classList.toggle('nature', !view || !view.display || view.display.theme !== 'plain');
     const onBreak = !!(view && view.timer && view.timer.kind === 'break' && view.timer.status === 'running' && view.timer.lunch);
+    document.body.classList.toggle('onbreak', onBreak);
     $('name').textContent = onBreak ? 'On a break' : 'Queuing';
     $('dot').className = 'dot' + (view ? (failed ? ' wait' : ' ok') : '');
     showUpdated(view);

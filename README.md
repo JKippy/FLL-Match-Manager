@@ -156,11 +156,11 @@ A field break is a **silent** countdown in **orange** that shows how long until 
   **Matches are still started by the Head Ref.** START during a break ends it and starts the match (with the ahead-of-schedule confirm if needed).
 - What the screens show during a break: **projector** = *Up next* with the next match's tables and big team numbers, and an orange strip underneath:
   "Field break · next match in 3:12 · scheduled 10:15 AM"; **pair screens** = *Next match on this field* with their teams plus an orange "FIELD BREAK 3:12 · next match at …" strip;
-  **queuing screen** = during a field break, the break clock in its top line, with the Next/Then cards unchanged. During **Lunch**, the gym queue and the public hallway queue (`queue.kippykiyay.com`) replace that list with “Lunch / On a break / Teams do not need to queue” until the break ends or Lunch is unticked.
+  **queuing screen** = during a field break, the break clock in its top line, with the Next/Then cards unchanged. During **Lunch**, the gym queue and the public hallway queue (`queue.kippykiyay.com`) replace that list with a wide “Lunch / On a break” sign, the countdown, when matches resume, and a “When we're back” line for the next match and its tables. That block is hidden when there is no next match. It stays until the break ends or Lunch is unticked.
 - **Lunch:** tick *Call this break **Lunch** (queue stops calling teams)* in the control page's Field break box (before or during the break). Every screen,
   including the queuing screen and the ref phones, then says *Lunch* instead of *Field break*. The break's length, end time,
   silence and the automatic break at a schedule gap work exactly the same. While that break is running, the queuing screens (gym and hallway) show
-  *On a break* and do not list teams to queue; untick Lunch and the call list comes back even if the break is still running. A tick made before the break stays on (even if an *End match session*
+  *On a break* across the width of the screen, and *When we're back* names the next match and the team at each table. They do not show the queuing list. Untick Lunch and the call list comes back even if the break is still running. A tick made before the break stays on (even if an *End match session*
   skips the break because you're behind) and applies to the next break that runs. The queue keeps calling teams until a break is actually running.
   The label goes back to *Field break* when that break ends, and the queue call list comes back with it.
 

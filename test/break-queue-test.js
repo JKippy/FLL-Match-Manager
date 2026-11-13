@@ -108,7 +108,61 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await control.check('#brkLunch'); await sleep(900);
     const b1 = await st(), lm = await text(D.main), lc = await text(D.C), lq = await text(D.Q);
     check('#62 Lunch on: projector, pair and queue screens say Lunch instead of Field break', [lm, lc, lq].every(x => /lunch/i.test(x) && !/field break/i.test(x)), { lm: lm.slice(0, 100), lc: lc.slice(0, 100), lq: lq.slice(0, 100) });
-    check('#75 queue during Lunch is on a break and does not call teams', /on a break/i.test(lq) && /do not need to queue/i.test(lq) && !/queuing soon/i.test(lq) && !/\bNext\b/.test(lq) && !/79742/.test(lq) && !/6470/.test(lq), lq.slice(0, 240));
+    check('#75 queue during Lunch is a wide on-a-break sign for Match 2, not the call list', /on a break/i.test(lq) && /when we're back/i.test(lq) && /matches resume at/i.test(lq) && /Match 2\b/.test(lq) && /79742/.test(lq) && /6470/.test(lq) && !/do not need to queue/i.test(lq) && !/queuing soon/i.test(lq) && !/\bNext\b/.test(lq) && !/84288/.test(lq), lq.slice(0, 400));
+    const oneLine = await D.Q.evaluate(() => {
+      const el = document.querySelector('.qbreak-on');
+      const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return { text: el.textContent, nowrap: s.whiteSpace === 'nowrap', lines: r.height / parseFloat(s.lineHeight), wide: r.width > 400 };
+    });
+    check('On a break is one wide line', oneLine.text === 'On a break' && oneLine.nowrap && oneLine.lines < 1.4 && oneLine.wide, oneLine);
+    const backBefore = await D.Q.evaluate(() => document.querySelector('.qback').innerText.replace(/\s+/g, ' '));
+    const t2 = await control.evaluate(() => FLL.schedule.matches[1].time);
+    await cmd('scheduleShift', { index: 1, time: Date.now() - 3600000 }); await sleep(400);
+    const backLate = await D.Q.evaluate(() => document.querySelector('.qback').innerText.replace(/\s+/g, ' '));
+    await cmd('scheduleShift', { index: 1, time: Date.now() + 3 * 3600000 }); await sleep(400);
+    const backEarly = await D.Q.evaluate(() => document.querySelector('.qback').innerText.replace(/\s+/g, ' '));
+    await cmd('scheduleShift', { index: 1, time: t2 }); await sleep(300);
+    check('the match we return to stays put when the break is early or late', /Match 2/.test(backBefore) && backLate === backBefore && backEarly === backBefore, { backBefore, backLate, backEarly });
+    await D.Q.setViewportSize({ width: 1366, height: 768 });
+    await sleep(200);
+    const fit768 = await D.Q.evaluate(() => {
+      const name = document.querySelector('.qname');
+      const bits = [...document.querySelectorAll('.qbreak-on, .qbreak .time, .brksub, .qback-match, .qrow')];
+      const inside = bits.every(el => { const r = el.getBoundingClientRect(); return r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1; });
+      return {
+        scrollX: document.documentElement.scrollWidth <= innerWidth + 1,
+        scrollY: document.documentElement.scrollHeight <= innerHeight + 1,
+        inside,
+        clamp: name ? getComputedStyle(name).webkitLineClamp : '',
+      };
+    });
+    check('1366x768 lunch sign has no scrollbar and nothing hangs off the screen', fit768.scrollX && fit768.scrollY && fit768.inside && fit768.clamp === '2', fit768);
+    const longName = 'The Extraordinarily Determined Robotic Pancake Flippers';
+    await D.Q.evaluate(n => { FLL.schedule.teamNames['79742'] = n; }, longName);
+    await sleep(300);
+    const longFit = await D.Q.evaluate(() => {
+      const el = document.querySelector('.qname');
+      const r = el.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      return {
+        title: el.title, clamp: s.webkitLineClamp, whiteSpace: s.whiteSpace,
+        inside: r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1,
+        scrollX: document.documentElement.scrollWidth <= innerWidth + 1,
+      };
+    });
+    check('a long team name wraps to two lines and stays on screen', longFit.title === longName && longFit.clamp === '2' && longFit.whiteSpace !== 'nowrap' && longFit.inside && longFit.scrollX, longFit);
+    await D.Q.evaluate(() => { FLL.state.match.current = FLL.schedule.matches.length; });
+    await sleep(200);
+    const none = await D.Q.evaluate(() => ({
+      back: !!document.querySelector('.qback'),
+      on: document.querySelector('.qbreak-on').textContent,
+      scrollX: document.documentElement.scrollWidth <= innerWidth + 1,
+      scrollY: document.documentElement.scrollHeight <= innerHeight + 1,
+    }));
+    check('no next match hides When we\'re back and the sign still fits', none.back === false && none.on === 'On a break' && none.scrollX && none.scrollY, none);
+    await D.Q.setViewportSize({ width: 1920, height: 1080 });
+    await sleep(100);
     check('#62 Lunch is a label only: same break, same end time', b1.lunch === true && b1.kind === 'break' && b1.status === 'running' && b1.breakUntil === b0.breakUntil && b1.startAt === b0.startAt && b1.duration === b0.duration);
     check('#62 control status says lunch', /lunch/i.test(await control.textContent('#status')));
     // ---- #61 tap one QR code: only it stays visible; tap again or wait restores all ----
@@ -210,6 +264,17 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     s = await st();
     check('#62 automatic End match session when behind skips the break and keeps the Lunch tick', s.kind === 'match' && s.status === 'idle' && s.lastAction === 'session' && s.lunch === true && (await control.isChecked('#brkLunch')), { kind: s.kind, status: s.status, last: s.lastAction, lunch: s.lunch });
     await control.uncheck('#brkLunch'); await control.uncheck('#brkAuto'); await sleep(400);
+
+    // Saturday's real schedule. The lunch gap is 11:43 AM → 12:45 PM, so the sign names that 12:45 match.
+    const mustang = fs.readFileSync(path.join(__dirname, 'fixtures', 'mustang-madness-2026.csv'), 'utf8');
+    const loaded = await cmd('scheduleCSV', { text: mustang, date: '2026-11-14', name: 'Mustang Madness' });
+    check('Saturday schedule loads: 40 matches, no import warning', loaded.ok && (await control.evaluate(() => FLL.schedule.matches.length)) === 40 && (await control.evaluate(() => document.getElementById('schedWarn').hidden)), loaded);
+    await cmd('goto', { index: 8 }); await sleep(300);
+    await cmd('scheduleShift', { index: 8, time: Date.now() + 10 * 60000 }); await sleep(300);
+    await cmd('breakLabel', { lunch: true });
+    const sat = await cmd('endSession'); await sleep(800);
+    const sq = await text(D.Q);
+    check('Saturday lunch: When we\'re back is the 12:45 match on tables 1-4', sat.ok && (await st()).kind === 'break' && /on a break/i.test(sq) && /when we're back/i.test(sq) && /Match 9\b/.test(sq) && /75440/.test(sq) && /63427/.test(sq) && /38269/.test(sq) && /65886/.test(sq) && !/73079/.test(sq) && !/do not need to queue/i.test(sq), sq.slice(0, 320));
 
     // ---- classic pack + plain theme toggles ----
     await control.click('#packSeg button[data-pack="classic"]'); await sleep(400);
