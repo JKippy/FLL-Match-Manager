@@ -76,23 +76,137 @@ const nullProto = o => { const out = Object.create(null); if (o && typeof o === 
 store.displays = nullProto(null);
 const BAK_FILE = STORE_FILE + '.bak';
 function loudly(...lines) { console.error('\n  ' + '!'.repeat(72)); for (const l of lines) console.error('  !! ' + l); console.error('  ' + '!'.repeat(72) + '\n'); }
-// Read state.json; if it is damaged (e.g. power cut mid-write on an old version), fall back to state.json.bak and say so loudly.
-function readSaved() {
-  for (const f of [STORE_FILE, BAK_FILE]) {
-    let text;
-    try { text = fs.readFileSync(f, 'utf8'); } catch (e) { if (e.code === 'ENOENT') continue; loudly(`Could not read ${f}: ${e.message}`); continue; }
-    try {
-      const saved = JSON.parse(text);
-      if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('not a JSON object');
-      if (f === BAK_FILE) loudly(`${STORE_FILE} is missing or damaged. Restored the schedule and settings from the backup`, `${BAK_FILE}`, 'Check the match number and the timer on the control page.');
-      return saved;
-    } catch (e) {
-      const keep = f + '.corrupt-' + new Date().toISOString().replace(/[:.]/g, '-');
-      try { fs.copyFileSync(f, keep); } catch (e2) {}
-      loudly(`${f} is damaged and cannot be loaded (${e.message}).`, `A copy was kept as ${keep}`);
+function plainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+function corruptPath(f) {
+  const base = f + '.corrupt-' + new Date().toISOString().replace(/[:.]/g, '-');
+  let p = base, n = 2;
+  while (fs.existsSync(p)) p = base + '-' + (n++);
+  return p;
+}
+// Move a damaged save aside so a later save cannot copy it over state.json.bak (#6, #84).
+function setAside(f) {
+  const keep = corruptPath(f);
+  try { fs.renameSync(f, keep); return keep; }
+  catch (e) {
+    try { fs.copyFileSync(f, keep); fs.unlinkSync(f); return keep; }
+    catch (e2) { return null; }
+  }
+}
+function layoutOk(v) {
+  return plainObject(v) && Array.isArray(v.pairs) && v.pairs.every(p => plainObject(p) && Array.isArray(p.tables));
+}
+// Shape check after JSON.parse. A null timer (or other bad field) is repaired when the
+// schedule is still there; otherwise the file is rejected and the caller tries the backup.
+// Covers every field startup or the first tick reads: timer, sound.cues, breaks, match,
+// refs, and schedule.matches (including a run that ended while the server was down).
+function inspectSaved(saved) {
+  if (!plainObject(saved)) return { ok: false, reason: 'not a JSON object' };
+  const state = Object.assign({}, saved);
+  const repairs = [];
+  if (state.schedule != null) {
+    if (!plainObject(state.schedule) || !Array.isArray(state.schedule.matches)) return { ok: false, reason: 'schedule has no matches array' };
+    let teamsFixed = false;
+    for (const m of state.schedule.matches) {
+      if (!plainObject(m)) return { ok: false, reason: 'schedule.matches has a non-object entry' };
+      if (m.teams == null) { m.teams = {}; teamsFixed = true; }
+      else if (!plainObject(m.teams)) return { ok: false, reason: 'schedule.matches teams is not an object' };
+    }
+    if (teamsFixed) repairs.push('match teams');
+  }
+  const keepSchedule = !!(state.schedule && state.schedule.matches.length);
+  if (state.timer !== undefined && !plainObject(state.timer)) {
+    // Nothing to keep: a null timer with an empty schedule must not hide a good backup.
+    if (!keepSchedule) return { ok: false, reason: 'timer is not an object' };
+    delete state.timer;
+    repairs.push('timer was not an object');
+  } else if (plainObject(state.timer)) {
+    const t = state.timer;
+    if ((t.status === 'running' || t.status === 'paused') && (!Number.isFinite(t.startAt) || !Number.isFinite(t.duration))) {
+      t.status = 'idle';
+      t.startAt = null;
+      repairs.push('timer was running without a start time');
     }
   }
-  if (fs.existsSync(STORE_FILE)) loudly('No usable saved state: starting with an EMPTY schedule and default settings.');
+  function dropBad(key) {
+    if (state[key] === undefined) return;
+    if (!plainObject(state[key])) { delete state[key]; repairs.push(key); }
+  }
+  dropBad('match');
+  dropBad('breaks');
+  dropBad('refs');
+  dropBad('nexus');
+  dropBad('display');
+  if (state.sound !== undefined) {
+    if (!plainObject(state.sound)) { delete state.sound; repairs.push('sound'); }
+    else if (Object.prototype.hasOwnProperty.call(state.sound, 'cues') && !plainObject(state.sound.cues)) {
+      const sound = Object.assign({}, state.sound);
+      delete sound.cues;
+      state.sound = sound;
+      repairs.push('sound.cues');
+    } else if (plainObject(state.sound.cues)) {
+      for (const c of CUES) {
+        const cue = state.sound.cues[c];
+        if (!plainObject(cue) || cue.file == null || plainObject(cue.file)) continue;
+        cue.file = null;
+        repairs.push('sound.' + c);
+      }
+    }
+  }
+  if (state.layout !== undefined && !layoutOk(state.layout)) { delete state.layout; repairs.push('layout'); }
+  if (state.displays != null && !plainObject(state.displays)) { delete state.displays; repairs.push('displays'); }
+  return { ok: true, state, repairs };
+}
+function loadedNote(f, repairs) {
+  return repairs && repairs.length ? `repaired ${f} (kept the rest of that file; fixed ${repairs.join(', ')})` : f;
+}
+let repairedLoad = false;
+// Read state.json. Parse failures and bad shapes are renamed aside, then state.json.bak is tried
+// with the same checks. If that fails too, startup continues from the default state.
+function readSaved() {
+  const bad = [];
+  for (const f of [STORE_FILE, BAK_FILE]) {
+    let text;
+    try { text = fs.readFileSync(f, 'utf8'); }
+    catch (e) {
+      if (e.code !== 'ENOENT') {
+        const keep = setAside(f);
+        loudly(`Could not read ${f}: ${e.message}`, keep ? `It was set aside as ${keep}` : 'It could not be moved aside.');
+        bad.push({ f, reason: e.message, keep });
+      }
+      continue;
+    }
+    let parsed, reason;
+    try { parsed = JSON.parse(text); }
+    catch (e) { reason = e.message; }
+    const checked = reason ? { ok: false, reason } : inspectSaved(parsed);
+    if (!checked.ok) {
+      const keep = setAside(f);
+      loudly(`${f} is damaged and cannot be loaded (${checked.reason}).`, keep ? `It was set aside as ${keep}` : 'It could not be moved aside.');
+      bad.push({ f, reason: checked.reason, keep });
+      continue;
+    }
+    let keep = null;
+    if (checked.repairs.length) {
+      keep = setAside(f);
+      if (!keep) {
+        loudly(`${f} is damaged and cannot be loaded (${checked.repairs.join(', ')}).`, 'It could not be moved aside.');
+        bad.push({ f, reason: checked.repairs.join(', '), keep: null });
+        continue;
+      }
+      repairedLoad = true;
+    }
+    const parts = bad.map(b => `${b.f} is damaged (${b.reason})` + (b.keep ? ` and was set aside as ${b.keep}` : ''));
+    if (checked.repairs.length) parts.push(`${f} is damaged (${checked.repairs.join(', ')}) and was set aside as ${keep}`);
+    if (parts.length) console.warn(`WARNING: ${parts.join('; ')}; loaded ${loadedNote(f, checked.repairs)}.`);
+    if (f === BAK_FILE) loudly(`${STORE_FILE} is missing or damaged. Restored the schedule and settings from the backup`, `${BAK_FILE}`, 'Check the match number and the timer on the control page.');
+    return checked.state;
+  }
+  if (bad.length) {
+    const parts = bad.map(b => `${b.f} is damaged (${b.reason})` + (b.keep ? ` and was set aside as ${b.keep}` : ''));
+    console.warn(`WARNING: ${parts.join('; ')}; loaded default state.`);
+    loudly('No usable saved state: starting with an EMPTY schedule and default settings.');
+  }
+  repairedLoad = false;
   return null;
 }
 let crossedEnd = false;   // the server was down when a running match reached 0:00
@@ -116,8 +230,26 @@ try {
   for (const k of ['runId', 'abortId']) if (!store.timer[k]) store.timer[k] = 0;
   if (!store.timer.matchDuration) store.timer.matchDuration = store.timer.duration;
   store.refs = Object.assign({ ready: {}, calls: {}, callSeq: 0, used: false, confirm: true }, store.refs);
+  if (!plainObject(store.refs.ready)) store.refs.ready = {};
+  if (!plainObject(store.refs.calls)) store.refs.calls = {};
   if (!store.refs.keys || typeof store.refs.keys !== 'object' || Array.isArray(store.refs.keys)) store.refs.keys = {};
-} catch (e) { if (e) loudly('Saved state could not be applied: ' + (e.message || e)); }
+} catch (e) {
+  repairedLoad = false;
+  if (e) loudly('Saved state could not be applied: ' + (e.message || e));
+}
+// The apply above can throw after it has already stored a null. Put the fields the
+// first tick reads back before scheduleDone / finishRun run outside this try.
+function ensureStoreShape() {
+  if (!plainObject(store.timer)) store.timer = { status: 'idle', kind: 'match', duration: 150000, matchDuration: 150000, startAt: null, remainingAtPause: null, label: 'Match', seq: 0, lastAction: null, breakUntil: null, breakFor: null, runId: 0, abortId: 0, abortAt: null, ready: false };
+  if (!plainObject(store.sound) || !plainObject(store.sound.cues)) store.sound = { master: 0.9, pack: 'nature', callMain: 0.35, cues: { start: { vol: 1, file: null }, warn: { vol: 1, file: null }, end: { vol: 1, file: null }, abort: { vol: 1, file: null }, call: { vol: 1, file: null } } };
+  if (!plainObject(store.breaks)) store.breaks = { aheadMin: 2, minBreakSec: 30, auto: false, autoDelaySec: 5 };
+  if (!plainObject(store.match)) store.match = { current: 0, live: null, actualStarts: {}, autoAdvance: true };
+  if (!plainObject(store.refs)) store.refs = { ready: {}, calls: {}, callSeq: 0, used: false, confirm: true, keys: {} };
+  if (!layoutOk(store.layout)) store.layout = JSON.parse(JSON.stringify(Sched.DEFAULT_LAYOUT));
+  if (!plainObject(store.nexus)) store.nexus = { url: '', auto: false, lastFetch: null, error: null };
+  if (!plainObject(store.display)) store.display = { theme: 'nature', queueCount: 2 };
+}
+ensureStoreShape();
 // Saved synchronously and atomically BEFORE a command is acked: write a temp file, fsync, rename over state.json.
 // The previous good file is copied to state.json.bak (at most every 10 s) so a damaged file can be recovered.
 // Never copy a file that does not parse: the save after a recovery would otherwise replace the good backup with the truncated state.json (#6).
@@ -263,10 +395,10 @@ function finishRun(endedAt) {
   timer.status = 'done'; timer.seq++; timer.lastAction = 'end';
   const m = store.match;
   clearReady(m.live);
-  if (m.live != null && store.match.autoAdvance && m.current === m.live && store.schedule && m.current < store.schedule.matches.length - 1) m.current++;
+  if (m.live != null && store.match.autoAdvance && m.current === m.live && store.schedule && Array.isArray(store.schedule.matches) && m.current < store.schedule.matches.length - 1) m.current++;
   m.endedAt = endedAt || now();
   pruneReady();
-  if (store.breaks.auto) {
+  if (store.breaks && store.breaks.auto) {
     const seq = timer.seq;
     clearTimeout(autoSessionT);
     const wait = Math.max(0, (+store.breaks.autoDelaySec || 0) * 1000 - (now() - m.endedAt));
@@ -275,19 +407,21 @@ function finishRun(endedAt) {
 }
 function scheduleDone() {
   clearTimeout(endTimer);
-  if (timer.status !== 'running') return;
+  if (!timer || timer.status !== 'running') return;
   endTimer = setTimeout(() => {
-    if (timer.status !== 'running') return;
+    if (!timer || timer.status !== 'running') return;
     finishRun(); save(); broadcastState();
   }, Math.max(0, timer.startAt + timer.duration - now()) + 50);
 }
 if (crossedEnd) {
-  const wasBreak = timer.kind === 'break';
-  finishRun(timer.startAt + timer.duration);
-  console.log(wasBreak ? '  The field break ended while the server was stopped: ready for the next match.'
-    : `  A match reached 0:00 while the server was stopped: marked done${store.match.autoAdvance ? ' and advanced to the next match' : ''}.`);
-  save();
-}
+  try {
+    const wasBreak = timer.kind === 'break';
+    finishRun(timer.startAt + timer.duration);
+    console.log(wasBreak ? '  The field break ended while the server was stopped: ready for the next match.'
+      : `  A match reached 0:00 while the server was stopped: marked done${store.match.autoAdvance ? ' and advanced to the next match' : ''}.`);
+    save();
+  } catch (e) { console.error('  Could not finish a match that ended while the server was stopped: ' + (e.message || e)); }
+} else if (repairedLoad) save();
 scheduleDone();
 
 function stateMsg() {
