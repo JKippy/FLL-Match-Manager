@@ -390,10 +390,10 @@ function checkPin(c, pin) {
 setInterval(() => { const t = now(); for (const [k, g] of pinFails) if (g.until < t - 15 * 60000) pinFails.delete(k); }, 60000).unref();
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
 const refuse = (text, code, info) => { const e = new Error(text); if (code) e.code = code; if (info) e.info = info; throw e; };
-// Timer commands older than this are ignored (#88). 2500 ms is the phone's heartbeat (public/sync.js HB_MS): on a
-// stalled link the phone gives up once a ping goes unanswered that long, and a START delivered after that must not
-// start the match. Age is "server now minus sentAt". The phone sets sentAt from its measured clock offset, not from
-// the phone's wall clock. The venue tunnel is hundreds of ms, so a slow-but-live press is still applied.
+// Timer commands older than this are ignored (#88). Age is "server now minus sentAt". The phone sets sentAt from its
+// measured clock offset, not from the phone's wall clock, and it does not report the tap as failed until this same
+// age plus a short margin (public/sync.js STALE_CMD_MS / STALE_MARGIN_MS). A ping that was already unanswered when
+// the ref tapped used to make the phone give up while this window was still open. The venue tunnel is hundreds of ms.
 const STALE_CMD_MS = 2500;
 // start covers resume (same command). pause, reset (abort), and the end actions share that path: a late one would
 // stop the match, sound the foghorn, or end a break after the Head Ref had already given up.

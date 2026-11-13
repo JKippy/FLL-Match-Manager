@@ -149,6 +149,10 @@ function openRaw(port) {
     r = await cmd('pause'); await sleep(300); const p1 = await st();
     r = await cmd('pause'); await sleep(300); s = await st();
     check('PAUSE on a paused match: ok, still paused, same time left', r.ok && s.status === 'paused' && s.remainingAtPause === p1.remainingAtPause, { r, status: s.status });
+    await hideToast(control); await control.evaluate(() => { window.__drop = 'lost'; });
+    r = await cmd('start');
+    check('#88 a stalled RESUME says RESUME, not START', r.ok === false && /RESUME/.test(r.error) && !/“START”/.test(r.error), r.error);
+    await connected(control); await sleep(300);
     await cmd('reset'); await sleep(300);
     r = await cmd('pause');
     check('PAUSE with nothing running is still refused', r.ok === false && /nothing to pause/i.test(r.error), r);
@@ -401,7 +405,7 @@ function openRaw(port) {
     await sleep(200);
     const heldStart = await phone.evaluate(() => { const m = (window.__sent || []).find(x => x.cmd === 'start'); return m ? { n: window.__sent.length, sentAt: m.sentAt } : null; });
     check('#88 stalled START left the phone and is stamped', !!heldStart && heldStart.n === 1 && typeof heldStart.sentAt === 'number' && proxy.heldBytes() > 0, { heldStart, bytes: proxy.heldBytes() });
-    const gaveUp = await waitFor(async () => { const x = await toast(phone); return !!x && /may not have gone through/i.test(x) && /START/.test(x); }, 7000);
+    const gaveUp = await waitFor(async () => { const x = await toast(phone); return !!x && (/may not have gone through/i.test(x) || /did not start|not started/i.test(x)) && /START/.test(x); }, 7000);
     check('#88 stalled link: phone gives up on START', gaveUp, await toast(phone));
     const remain = 6500 - (Date.now() - tTap);
     if (remain > 0) await sleep(remain);
@@ -443,6 +447,30 @@ function openRaw(port) {
     await sleep(800);
     s = await st();
     check('#88 retry arrives first, then the stalled START: one start and startAt unchanged', retryFirst && s.status === 'running' && s.startAt === midAt && s.runId === midRun && s.runId === run0 + 1, { midAt, midRun, end: { status: s.status, startAt: s.startAt, runId: s.runId }, run0 });
+
+    // The stall is already underway when the ref taps. The heartbeat is counting from the unanswered ping, so it used to
+    // report failure while sentAt was still inside the server's 2.5 s window, and the released START then started the match.
+    await cmd('reset'); await sleep(400);
+    await waitFor(() => phone.evaluate(() => FLL.connected && FLL.state && FLL.state.status === 'idle' && /START/i.test(document.getElementById('startBtn').textContent)));
+    await sleep(1200);
+    await hideToast(phone);
+    await phone.evaluate(() => { window.__sent = []; });
+    const preRun = (await st()).runId || 0;
+    proxy.stall();
+    await sleep(1600);
+    const preTap = Date.now();
+    await phone.click('#startBtn');
+    await sleep(1000);
+    const earlyToast = await toast(phone);
+    check('#88 pre-stalled: no failure toast while the START is still inside the server window', !(earlyToast && /may not have gone through|did not start|not started/i.test(earlyToast)), earlyToast);
+    const untilRelease = 2300 - (Date.now() - preTap);
+    if (untilRelease > 0) await sleep(untilRelease);
+    proxy.release();
+    const preStarted = await waitFor(() => control.evaluate(() => FLL.state && FLL.state.status === 'running'), 5000);
+    s = await st();
+    t = await toast(phone);
+    const preBtn = await phone.evaluate(() => document.getElementById('startBtn').textContent);
+    check('#88 pre-stalled START released inside the window starts once and the phone agrees', preStarted && s.status === 'running' && (s.runId || 0) === preRun + 1 && /PAUSE/i.test(preBtn) && !(t && /may not have gone through|did not start|not started/i.test(t)), { status: s.status, runId: s.runId, btn: preBtn, toast: t });
     await proxy.close();
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); await new Promise(r => { srv.once('exit', r); srv.kill(); });
