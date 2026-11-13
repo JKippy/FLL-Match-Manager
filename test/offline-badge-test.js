@@ -2,6 +2,7 @@
 // corner (not over the clock) while it is disconnected, and hides it again on reconnect.   node test/offline-badge-test.js
 // #54: a display whose device is offline (no network) plays no local-clock cue (no 30 s warning, holds at 0:00 without END);
 // on reconnect the server state wins and nothing plays late or twice.
+// #89: the Head Ref page says offline (and ignores START/PAUSE) as soon as the phone reports no network, even while the socket still looks open.
 const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path');
@@ -152,6 +153,46 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('#56 late read: END fires on the 0:00 frame, once', one('end').length === 1 && one('end')[0].painted === '0:00' && one('end')[0].shown === '0:00', lag);
     check('#56 late read: 30 s warning fires on the 0:30 frame, once', one('warn').length === 1 && one('warn')[0].painted === '0:30', lag);
     await dctx.close();
+
+    // ---------- #89: the Head Ref phone must not keep saying "connected" with no network ----------
+    await cmd('reset'); await cmd('set', { duration: 120000, label: 'Match' }); await sleep(200);
+    await cmd('start', { force: true });
+    check('#89 match is running', await waitFor(() => control.evaluate(() => FLL.state && FLL.state.status === 'running')));
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    const phone = await pctx.newPage(); phone.on('pageerror', e => { console.log('PAGE ERROR #89', e.message); failed++; });
+    await phone.goto(`${BASE}/control`);
+    await phone.waitForSelector('#pinModal:not(.hidden)', { state: 'attached' });
+    await phone.fill('#pinInput', PIN); await phone.click('#pinBtn');
+    await phone.waitForSelector('#pinModal.hidden', { state: 'attached' });
+    check('#89 phone connects while the match is running', await waitFor(() => phone.evaluate(() => FLL.connected && FLL.authed && FLL.state && FLL.state.status === 'running' && document.getElementById('conn').textContent === 'connected')));
+    await pctx.setOffline(true);
+    const offlineNow = await waitFor(() => phone.evaluate(() => {
+      const conn = document.getElementById('conn').textContent || '';
+      const ban = document.getElementById('offlineBanner');
+      const shown = !!ban && !ban.classList.contains('hidden') && /OFFLINE/.test(ban.textContent || '') && /time may be off/i.test(ban.textContent || '');
+      return navigator.onLine === false && FLL.offline === true && conn !== 'connected' && /offline/i.test(conn) && shown && document.getElementById('startBtn').disabled === true;
+    }), 1500);
+    const offDetail = await phone.evaluate(() => {
+      const ban = document.getElementById('offlineBanner');
+      return { conn: document.getElementById('conn').textContent, offline: FLL.offline, onLine: navigator.onLine, connected: FLL.connected,
+        banner: ban && ban.textContent, hidden: ban && ban.classList.contains('hidden'), disabled: document.getElementById('startBtn').disabled };
+    });
+    check('#89 within 1.5s the Head Ref page says offline, not connected', offlineNow, offDetail);
+    const runningAt = await control.evaluate(() => ({ status: FLL.state.status, startAt: FLL.state.startAt }));
+    await phone.evaluate(() => document.getElementById('startBtn').click());   // a disabled button does not fire; a real tap would not either
+    await sleep(500);
+    await pctx.setOffline(false);
+    await sleep(1500);
+    const afterTap = await control.evaluate(() => ({ status: FLL.state.status, startAt: FLL.state.startAt }));
+    check('#89 a PAUSE tapped while offline does not apply when the network returns', afterTap.status === 'running' && afterTap.startAt === runningAt.startAt, { before: runningAt, after: afterTap });
+    check('#89 back online the page says connected and START/PAUSE works again', await waitFor(() => phone.evaluate(() => {
+      const conn = document.getElementById('conn').textContent || '';
+      const ban = document.getElementById('offlineBanner');
+      return navigator.onLine !== false && FLL.offline === false && FLL.connected && conn === 'connected' && !!ban && ban.classList.contains('hidden') && document.getElementById('startBtn').disabled === false;
+    }), 8000), await phone.evaluate(() => ({ conn: document.getElementById('conn').textContent, offline: FLL.offline, connected: FLL.connected })).catch(e => String(e)));
+    await phone.click('#startBtn');
+    check('#89 PAUSE after reconnect pauses the match', await waitFor(() => control.evaluate(() => FLL.state && FLL.state.status === 'paused'), 4000), await control.evaluate(() => FLL.state && FLL.state.status));
+    await pctx.close();
   } catch (e) { console.log('ERROR', e && e.stack || e); failed++; }
   await browser.close(); if (srv && srv.exitCode == null) await stopServer();
   fs.rmSync(DATA, { recursive: true, force: true });
