@@ -57,13 +57,19 @@
     // Commands are never resent automatically. If the reply is lost we say so and let the Head Ref / referee check the screen.
     cmd(cmd, extra) {
       const id = ++cmdSeq, uid = PAGE + '.' + id;
+      // sentAt is the server clock at the moment of the tap (local clock + the measured offset). The server
+      // rejects a timer command that arrives older than the phone's give-up. Wall-clock time is not sent:
+      // a phone can be minutes off, and the offset stays valid after the link drops.
+      const stamped = Object.assign({ t: 'cmd', cmd, id, uid }, extra || {});
+      if (this.haveClock) stamped.sentAt = Math.round(this.serverNow());
       return new Promise(resolve => {
-        if (!this.send(Object.assign({ t: 'cmd', cmd, id, uid }, extra || {}))) {
+        if (!this.send(stamped)) {
           const r = { ok: false, cmd, error: 'Not connected to the timer server (reconnecting…). Check the Wi-Fi and try again.' };
           S.refused(r); return resolve(r);
         }
-        const timer = setTimeout(() => { if (pending.delete(id)) { const r = { ok: false, cmd, error: 'No reply from the timer server for “' + label(cmd) + '”. It may still have gone through: check the screen before tapping again.' }; S.refused(r); resolve(r); } }, 4000);
-        pending.set(id, { cmd, done: r => { clearTimeout(timer); resolve(r); } });
+        const shown = cmd === 'start' && this.state && this.state.kind === 'match' && this.state.status === 'paused' ? 'RESUME' : label(cmd);
+        const timer = setTimeout(() => { if (pending.delete(id)) { const r = { ok: false, cmd, error: 'No reply from the timer server for “' + shown + '”. It may still have gone through: check the screen before tapping again.' }; S.refused(r); resolve(r); } }, 4000);
+        pending.set(id, { cmd, sentAt: stamped.sentAt, name: shown, done: r => { clearTimeout(timer); resolve(r); } });
       });
     },
     refused(r) {
@@ -75,6 +81,13 @@
   };
 
   let cmdSeq = 0; const pending = new Map();
+  let droppedCmds = [];
+  // Same window the server uses (server.js STALE_CMD_MS). A heartbeat gives up 2500 ms after the unanswered
+  // ping, which can be before this if the stall started first. Don't tell the ref the tap failed until the
+  // server would reject it too, plus a short margin so a command still inside the window can't be announced as lost.
+  const STALE_CMD_MS = 2500, STALE_MARGIN_MS = 400;
+  const TIMED_CMD = { start: 1, pause: 1, reset: 1, breakEnd: 1, breakStart: 1, endSession: 1 };
+  let giveUpTimers = [];
   // This page load's random tag (crypto, works on plain-HTTP LAN pages too): tap uids stay unique across devices and reloads.
   const PAGE = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
   const LABELS = { start: 'START', pause: 'PAUSE', reset: 'RESET / ABORT', breakEnd: 'END BREAK', breakStart: 'START BREAK', goto: 'change match', refReady: 'READY', refCall: 'Call Head Ref', refCancel: 'Cancel call', callAck: 'acknowledge call' };
@@ -110,11 +123,16 @@
     try { ws.close(); } catch (e) {}
     S.ws = null; clearTimeout(openT); clearTimeout(pingTimer); pingOutAt = null;
     // A command sent but not answered may or may not have been applied: never resend it, tell the user to check (#46).
+    // A heartbeat drop (stale) can happen while the server would still accept the tap, because the unanswered ping
+    // started before the tap. Hold that announcement until sentAt + STALE_CMD_MS + margin (#88).
+    const dropped = [];
     for (const [id, p] of pending) {
       pending.delete(id);
-      const r = { ok: false, cmd: p.cmd, error: 'Connection dropped: “' + label(p.cmd) + '” may not have gone through. Check the screen once reconnected, then tap again only if needed.' };
-      S.refused(r); p.done(r);
+      const stillOpen = stale && p.sentAt != null && TIMED_CMD[p.cmd] && S.haveClock && S.serverNow() < p.sentAt + STALE_CMD_MS + STALE_MARGIN_MS;
+      if (stillOpen) scheduleGiveUp(p);
+      else { dropped.push(p.cmd); failDropped(p); }
     }
+    if (dropped.length) { droppedCmds = dropped; S._needReconcile = true; }
     // The device itself reports it is offline (Wi-Fi dropped): keep counting on the local clock (not stale, so the time stays on
     // screen), but mark it offline: END is held at 0:00 until the server confirms (#54). Only a silent link on a "working" network is stale.
     if (navigator.onLine === false) { S.offline = true; stale = false; }
@@ -123,10 +141,48 @@
     S.connected = false; S.synced = false;
     S.emit('status'); retry();
   }
+  function failDropped(p) {
+    if (!p.done) return;
+    const r = { ok: false, cmd: p.cmd, error: 'Connection dropped: “' + (p.name || label(p.cmd)) + '” may not have gone through. Check the screen once reconnected, then tap again only if needed.' };
+    S.refused(r); const done = p.done; p.done = null; done(r);
+  }
+  function scheduleGiveUp(p) {
+    const delay = Math.max(0, p.sentAt + STALE_CMD_MS + STALE_MARGIN_MS - S.serverNow());
+    const t = setTimeout(() => {
+      giveUpTimers = giveUpTimers.filter(g => g.p !== p);
+      if (!p.done) return;
+      // Already reconnected: the state we hold is the truth, and the server window is closed.
+      if (S.connected && S.state && p.cmd === 'start') {
+        if (S.state.kind === 'match' && S.state.status === 'running') { const done = p.done; p.done = null; done({ ok: true, cmd: 'start' }); return; }
+        reconcileGiveUp(S.state, [p.cmd]);
+        if (p.done) { const done = p.done; p.done = null; done({ ok: false, cmd: p.cmd }); }
+        return;
+      }
+      droppedCmds = [p.cmd]; S._needReconcile = true;
+      failDropped(p);
+    }, delay);
+    giveUpTimers.push({ p, t });
+  }
+  // Fresh state after a drop: a START that landed shows as running (cancel the pending failure). One that did not, once the
+  // server window has closed, is "press again". While the window is still open, idle state does not mean the tap failed.
+  function reconcileGiveUp(m, cmds) {
+    if (m.kind === 'match' && m.status === 'running') {
+      for (const g of giveUpTimers) if (g.p.cmd === 'start' && g.p.done) { clearTimeout(g.t); const done = g.p.done; g.p.done = null; done({ ok: true, cmd: 'start' }); }
+      giveUpTimers = giveUpTimers.filter(g => g.p.done);
+    }
+    if (cmds && cmds.includes('start') && !(m.kind === 'match' && m.status === 'running')) {
+      S.emit('error', m.kind === 'match' && m.status === 'paused' ? 'RESUME did not go through. Press RESUME again.' : 'START did not start the match. Press START again.');
+    }
+  }
   S._lost = stale => S.ws && lost(S.ws, !!stale);   // test hook
-  // The device lost its network: until fresh state arrives, the server may have paused the match without us knowing (#54).
-  window.addEventListener('offline', () => { if (!S.connected && !S.offline) { S.offline = true; S.emit('status'); } });
-  window.addEventListener('online', () => S.checkLink());   // network back: reconnect now instead of waiting out the backoff
+  // The device lost its network. Mark it immediately, even while the socket still looks open: TCP has not noticed yet,
+  // and the Head Ref page must not keep saying "connected" (#89). Until fresh state arrives the match may have been
+  // paused without us knowing, so local cues stay quiet (#54).
+  window.addEventListener('offline', () => { if (!S.offline) { S.offline = true; S.emit('status'); } });
+  window.addEventListener('online', () => {
+    if (S.connected && S.offline && navigator.onLine !== false) { S.offline = false; S.emit('status'); }
+    S.checkLink();   // network back: reconnect now instead of waiting out the backoff
+  });
   function retry() { if (retryT) return; retryT = setTimeout(open, backoff); backoff = Math.min(5000, backoff * 1.6); }
   function ping() {
     clearTimeout(pingTimer);
@@ -157,13 +213,37 @@
       case 'refLink': S.refOk = !!m.ok; S.emit('status'); break;   // referee link replaced by the Head Ref
       case 'refKeys': S.refKeys = m.keys || {}; S.emit('refKeys', S.refKeys); break;   // control page only (PIN)
       case 'auth': S.authed = m.authed; S.authError = m.error || ''; S.emit('auth', m.authed, m); S.emit('status'); break;
-      case 'state': { const prev = S.state; S.state = m; if (S.stale || S.offline) { S.stale = false; S.offline = false; S.emit('status'); } S.emit('state', { prev, state: m }); break; }
+      case 'state': {
+        const prev = S.state; S.state = m;
+        if (S.stale || S.offline) {
+          S.stale = false;
+          // Stay offline while the device itself still reports no network, even if a frame sneaks through (#89).
+          if (navigator.onLine !== false) S.offline = false;
+          S.emit('status');
+        }
+        if (giveUpTimers.some(g => g.p.cmd === 'start')) reconcileGiveUp(m);
+        if (S._needReconcile) {
+          S._needReconcile = false;
+          const cmds = droppedCmds; droppedCmds = [];
+          // The socket died before the ack. Fresh state says whether START actually happened.
+          reconcileGiveUp(m, cmds);
+        }
+        S.emit('state', { prev, state: m });
+        break;
+      }
       case 'config': S.config = m; Sound.applyConfig(m); S.emit('config', m); break;
       case 'schedule': S.schedule = m.schedule; S.emit('schedule', m.schedule); break;
       case 'play': Sound.play(m.cue, true); break;
       case 'clients': S.emit('clients', m.list); break;
       case 'error': console.warn('[FLL] server error:', m.error); S.emit('error', m.error); break;
-      case 'ack': { const p = pending.get(m.id); pending.delete(m.id); if (!m.ok) S.refused(m); if (p) p.done(m); break; }
+      case 'ack': {
+        const p = pending.get(m.id); pending.delete(m.id);
+        // A late START that finds the match already running (the retry won) must not tell the ref to press again.
+        const already = m.code === 'late' && m.cmd === 'start' && S.state && S.state.kind === 'match' && S.state.status === 'running';
+        if (!m.ok && !already) S.refused(m);
+        if (p) p.done(m);
+        break;
+      }
       case 'notice': S.emit('notice', m.text); break;
       case 'calls': S.calls = m.calls || {}; S.emit('calls', S.calls); break;
       case 'chime': S.emit('chime', m); break;   // projector only: a referee called the Head Ref (no table info)
@@ -458,14 +538,18 @@
   // While the server is unreachable (socket closed) the local clock keeps going and END still fires once, keyed by runId,
   // so it can't double-fire when the server comes back. Exception (#54): if the device itself is OFFLINE (no network), the
   // match may have been paused meanwhile, so no cue driven by the local clock plays (START after a countdown, the 30 s warning,
-  // END). Crossings still advance `last`, so nothing fires late on reconnect; only END is held: it plays once if fresh state
-  // then says the run ended (within 10 s), and not at all if the server says paused / still running. Server-driven sounds
-  // (abort, Head Ref chime, test plays) are unchanged. While the state is STALE (heartbeat timeout, the match may have
-  // been paused meanwhile) nothing fires; if END came due during a short stall, it is played once when the fresh "done"
-  // state arrives within 2 s of the end (only for a run this page watched running, so a late join never replays it).
+  // END). Crossings still advance `last`, so nothing fires late on reconnect, and not at all if the server says paused
+  // or still running. Server-driven sounds (abort, Head Ref chime, test plays) are unchanged. While the state is STALE
+  // (heartbeat timeout, the match may have been paused meanwhile) nothing fires. END that came due during that stall, or
+  // while the device was offline, still plays once when fresh state says the run ended — but only if this page was already
+  // tracking that run, and only within END_RECONNECT_MS of endedAt. A fresh load has not tracked the run, so it stays
+  // silent, and a reconnect after the window stays silent too (#87).
+  // 15 s covers a link that is still down a few seconds after 0:00, plus the reconnect backoff, and stays well short of
+  // a late join minutes later. The same window is the offline confirmation (#54 used 10 s); abort/start/warn are separate.
+  const END_RECONNECT_MS = 15000;
   S.cueWatcher = function (onCue) {
     let last = null, lastSeq = null, seenAbort;
-    const played = new Set(), watched = new Set(), held = new Set();
+    const played = new Set(), watched = new Set();
     const fire = (key, name) => { if (played.has(key)) return; played.add(key); onCue(name); };
     // frameR (optional): the remaining time the caller just painted. The cue then fires on that same value,
     // so END is the frame that shows 0:00 and the warning is the frame that shows 0:30 (#56).
@@ -480,7 +564,7 @@
         lastSeq = st.seq;
         if (st.status !== 'running') {
           if (st.status === 'done' && last != null && last > 0 && last < 1500) fire(run + ':end', 'end');
-          else if (st.status === 'done' && st.kind !== 'break' && watched.has(run) && st.match && st.match.endedAt && S.serverNow() - st.match.endedAt < (held.has(run) ? 10000 : 2000)) fire(run + ':end', 'end');
+          else if (st.status === 'done' && st.kind !== 'break' && watched.has(run) && st.match && st.match.endedAt && S.serverNow() - st.match.endedAt < END_RECONNECT_MS) fire(run + ':end', 'end');
           last = r; return;
         }
       }
@@ -491,7 +575,7 @@
         const quiet = S.isOffline();   // offline: the local clock may be wrong (paused meanwhile), so it plays nothing (#54)
         if (!quiet && last >= dur && r < dur && (S.serverNow() - st.startAt) < 1500) fire(run + ':start', 'start');
         if (!quiet && dur > 30000 && crossed(30000)) fire(run + ':warn', 'warn');
-        if (crossed(0)) { if (quiet) held.add(run); else fire(run + ':end', 'end'); }
+        if (crossed(0) && !quiet) fire(run + ':end', 'end');
       }
       last = r;
     };

@@ -1,7 +1,8 @@
 // v0.5.1 robustness regression tests (Testing & Validation findings + projector call chime).   node test/robust-test.js
 // Request parsing hardening, CSV limits, device id validation, clients list only for authed controls, PIN limits,
 // goto validation + stale NEXT refusal, persist-before-ack (kill -9), corrupt state.json -> .bak, restart across a match end,
-// END from the local clock while the server is down (once), heartbeat stall -> stale -> no cues, control-page write-on-change,
+// END from the local clock while the server is down (once), heartbeat stall -> stale -> no cues,
+// #87 stale reconnect plays END once within 15 s of 0:00 (not on reload, not after 30 s), control-page write-on-change,
 // iOS revive hooks + sound hint, soft call chime on the projector only (one-shot, no replay, own volume, nothing visual).
 const { chromium } = require('playwright-core');
 const { spawn } = require('child_process');
@@ -327,6 +328,83 @@ function req(method, p, headers, body) {
     });
     check('long queue name is not clipped with no hint: it clamps or wraps, and the title is the full name',
       nameInfo.text.includes('Pancake Flippers') && nameInfo.title === longName && nameInfo.whiteSpace !== 'nowrap' && nameInfo.clamp === '2' && nameInfo.h >= nameInfo.font, nameInfo);
+
+    // ---------- #87: END after a stale link comes back just past 0:00 ----------
+    // A silent link (device still "online") marks the display stale, so the local clock does not play END.
+    // Reconnecting within the grace window must play it once; a fresh load, a second reconnect, or a late
+    // reconnect must not. Auto end-of-session would leave "done" and hide the cue, so it stays off here.
+    await cmd('breakConfig', { auto: false });
+    const end87 = await mk(`${BASE}/display?role=main&autostart=1&fs=0`, [
+      'window.__DEVICE_ID="end87";',
+      'window.__blockWS=false;',
+      '(() => {',
+      '  const Real = WebSocket;',
+      '  function Wrapped(url, protocols) {',
+      '    if (window.__blockWS) throw new Error("link down");',
+      '    return protocols === undefined ? new Real(url) : new Real(url, protocols);',
+      '  }',
+      '  Wrapped.prototype = Real.prototype;',
+      '  window.WebSocket = Wrapped;',
+      '})();',
+    ].join('\n'));
+    const endCount = () => end87.evaluate(() => (window.__cues || []).filter(c => c.name === 'end').length);
+    const endNames = () => end87.evaluate(() => (window.__cues || []).map(c => c.name));
+    const dropLink = () => end87.evaluate(() => { window.__blockWS = true; if (FLL.ws) FLL._lost(true); });
+    const restoreLink = () => end87.evaluate(() => { window.__blockWS = false; FLL.checkLink(); });
+    check('#87 display connects', await waitFor(() => end87.evaluate(() => FLL.connected && FLL.synced && FLL.haveClock)));
+
+    await cmd('reset'); await cmd('set', { duration: 2000, label: 'Match' }); await sleep(300);
+    await end87.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true });
+    check('#87 on-time END plays', await waitFor(() => end87.evaluate(() => window.__cues.some(c => c.name === 'end')), 6000));
+    await sleep(800);
+    check('#87 on-time END plays once', (await endCount()) === 1, await endNames());
+
+    // Reload while the run is still freshly done: a new page load must not honk.
+    await end87.reload({ waitUntil: 'domcontentloaded' });
+    check('#87 reload sees the finished match', await waitFor(() => end87.evaluate(() => FLL.connected && FLL.state && FLL.state.status === 'done' && FLL.state.match && FLL.state.match.endedAt && (FLL.serverNow() - FLL.state.match.endedAt) < 15000), 8000));
+    await sleep(800);
+    check('#87 reload after done plays no END', (await endCount()) === 0, await endNames());
+
+    await cmd('reset'); await cmd('set', { duration: 5000, label: 'Match' }); await sleep(300);
+    await end87.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true });
+    check('#87 display is tracking the run before the drop', await waitFor(() => end87.evaluate(() => FLL.state && FLL.state.status === 'running' && FLL.remaining() > 3000 && FLL.remaining() < 5000), 4000));
+    await dropLink();
+    check('#87 link is stale (not device-offline) before 0:00', await waitFor(() => end87.evaluate(() => FLL.stale === true && FLL.connected === false && FLL.offline === false), 4000));
+    check('#87 server reaches done while the link is down', await waitFor(async () => (await st()).status === 'done', 8000));
+    const endedAt = (await st()).match.endedAt;
+    check('#87 no END while the link is still down across 0:00', (await endCount()) === 0 && endedAt > 0, { ends: await endCount(), endedAt });
+    await sleep(Math.max(0, endedAt + 3000 - Date.now()));
+    await restoreLink();
+    check('#87 reconnects with the finished match', await waitFor(() => end87.evaluate(() => FLL.connected && !FLL.stale && FLL.state && FLL.state.status === 'done'), 8000));
+    await sleep(800);
+    const age3 = Date.now() - endedAt;
+    check('#87 link back about 3 s after 0:00 plays END once', (await endCount()) === 1 && age3 >= 2500 && age3 < 12000, { ends: await endCount(), age3, cues: await endNames() });
+
+    await dropLink();
+    check('#87 drops again after END', await waitFor(() => end87.evaluate(() => FLL.connected === false && FLL.stale === true), 4000));
+    await sleep(400);
+    await restoreLink();
+    check('#87 second reconnect lands', await waitFor(() => end87.evaluate(() => FLL.connected && !FLL.stale && FLL.state && FLL.state.status === 'done'), 8000));
+    await sleep(800);
+    check('#87 a second reconnect does not play END again', (await endCount()) === 1, { ends: await endCount(), cues: await endNames() });
+
+    await cmd('reset'); await cmd('set', { duration: 2500, label: 'Match' }); await sleep(300);
+    await end87.evaluate(() => { window.__cues = []; });
+    await cmd('start', { force: true });
+    check('#87 display is tracking the run before the long drop', await waitFor(() => end87.evaluate(() => FLL.state && FLL.state.status === 'running' && FLL.remaining() > 1200), 4000));
+    await dropLink();
+    check('#87 long drop goes stale before 0:00', await waitFor(() => end87.evaluate(() => FLL.stale === true && FLL.connected === false), 4000));
+    check('#87 server reaches done during the long drop', await waitFor(async () => (await st()).status === 'done', 8000));
+    const endedAt30 = (await st()).match.endedAt;
+    await sleep(Math.max(0, endedAt30 + 30000 - Date.now()));
+    check('#87 no END while the link stays down well past 0:00', (await endCount()) === 0, await endNames());
+    await restoreLink();
+    check('#87 reconnects about 30 s after 0:00', await waitFor(() => end87.evaluate(() => FLL.connected && !FLL.stale && FLL.state && FLL.state.status === 'done'), 8000));
+    await sleep(800);
+    const age30 = Date.now() - endedAt30;
+    check('#87 link back about 30 s after 0:00 plays no END', (await endCount()) === 0 && age30 >= 29000, { ends: await endCount(), age30, cues: await endNames() });
   } catch (e) { console.log('ERROR', e.stack); failed++; }
   await browser.close().catch(() => {});
   await stopServer('SIGTERM');
