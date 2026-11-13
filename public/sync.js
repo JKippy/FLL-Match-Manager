@@ -458,14 +458,18 @@
   // While the server is unreachable (socket closed) the local clock keeps going and END still fires once, keyed by runId,
   // so it can't double-fire when the server comes back. Exception (#54): if the device itself is OFFLINE (no network), the
   // match may have been paused meanwhile, so no cue driven by the local clock plays (START after a countdown, the 30 s warning,
-  // END). Crossings still advance `last`, so nothing fires late on reconnect; only END is held: it plays once if fresh state
-  // then says the run ended (within 10 s), and not at all if the server says paused / still running. Server-driven sounds
-  // (abort, Head Ref chime, test plays) are unchanged. While the state is STALE (heartbeat timeout, the match may have
-  // been paused meanwhile) nothing fires; if END came due during a short stall, it is played once when the fresh "done"
-  // state arrives within 2 s of the end (only for a run this page watched running, so a late join never replays it).
+  // END). Crossings still advance `last`, so nothing fires late on reconnect, and not at all if the server says paused
+  // or still running. Server-driven sounds (abort, Head Ref chime, test plays) are unchanged. While the state is STALE
+  // (heartbeat timeout, the match may have been paused meanwhile) nothing fires. END that came due during that stall, or
+  // while the device was offline, still plays once when fresh state says the run ended — but only if this page was already
+  // tracking that run, and only within END_RECONNECT_MS of endedAt. A fresh load has not tracked the run, so it stays
+  // silent, and a reconnect after the window stays silent too (#87).
+  // 15 s covers a link that is still down a few seconds after 0:00, plus the reconnect backoff, and stays well short of
+  // a late join minutes later. The same window is the offline confirmation (#54 used 10 s); abort/start/warn are separate.
+  const END_RECONNECT_MS = 15000;
   S.cueWatcher = function (onCue) {
     let last = null, lastSeq = null, seenAbort;
-    const played = new Set(), watched = new Set(), held = new Set();
+    const played = new Set(), watched = new Set();
     const fire = (key, name) => { if (played.has(key)) return; played.add(key); onCue(name); };
     // frameR (optional): the remaining time the caller just painted. The cue then fires on that same value,
     // so END is the frame that shows 0:00 and the warning is the frame that shows 0:30 (#56).
@@ -480,7 +484,7 @@
         lastSeq = st.seq;
         if (st.status !== 'running') {
           if (st.status === 'done' && last != null && last > 0 && last < 1500) fire(run + ':end', 'end');
-          else if (st.status === 'done' && st.kind !== 'break' && watched.has(run) && st.match && st.match.endedAt && S.serverNow() - st.match.endedAt < (held.has(run) ? 10000 : 2000)) fire(run + ':end', 'end');
+          else if (st.status === 'done' && st.kind !== 'break' && watched.has(run) && st.match && st.match.endedAt && S.serverNow() - st.match.endedAt < END_RECONNECT_MS) fire(run + ':end', 'end');
           last = r; return;
         }
       }
@@ -491,7 +495,7 @@
         const quiet = S.isOffline();   // offline: the local clock may be wrong (paused meanwhile), so it plays nothing (#54)
         if (!quiet && last >= dur && r < dur && (S.serverNow() - st.startAt) < 1500) fire(run + ':start', 'start');
         if (!quiet && dur > 30000 && crossed(30000)) fire(run + ':warn', 'warn');
-        if (crossed(0)) { if (quiet) held.add(run); else fire(run + ':end', 'end'); }
+        if (crossed(0) && !quiet) fire(run + ':end', 'end');
       }
       last = r;
     };
