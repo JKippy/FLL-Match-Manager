@@ -271,10 +271,31 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     check('Saturday schedule loads: 40 matches, no import warning', loaded.ok && (await control.evaluate(() => FLL.schedule.matches.length)) === 40 && (await control.evaluate(() => document.getElementById('schedWarn').hidden)), loaded);
     await cmd('goto', { index: 8 }); await sleep(300);
     await cmd('scheduleShift', { index: 8, time: Date.now() + 10 * 60000 }); await sleep(300);
-    await cmd('breakLabel', { lunch: true });
-    const sat = await cmd('endSession'); await sleep(800);
+    await cmd('breakLabel', { lunch: false });
+    const sat = await cmd('endSession');
+    await D.Q.waitForFunction(() => FLL.state && FLL.state.kind === 'break' && /next match at/.test((document.querySelector('.qnow') || {}).innerText || ''), null, { timeout: 8000 });
+    const times = await D.Q.evaluate(() => {
+      const m = FLL.schedule.matches[FLL.state.match.current];
+      const top = (document.querySelector('.qnow') || {}).innerText || '';
+      const card = (document.querySelector('.qcard.first .tm') || {}).textContent || '';
+      return { sched: FLL.clock(m.time), early: FLL.clock(FLL.state.breakUntil), top, card, n: m.n, kind: FLL.state.kind };
+    });
+    check('#85 queue top line shows the scheduled match time, same as the Next card', sat.ok && times.kind === 'break' && times.n === 9 && times.sched !== times.early && times.card === times.sched && times.top.includes(times.sched) && !times.top.includes(times.early), times);
+    const pairFresh = await mk({ viewport: { width: 1180, height: 820 } }, `${BASE}/display?pair=A&autostart=1&fs=0`, 'window.__DEVICE_ID="a85";');
+    await pairFresh.waitForFunction(() => FLL.state && FLL.state.kind === 'break' && document.querySelector('.breaknote'), null, { timeout: 8000 });
+    const pairNote = await pairFresh.evaluate(() => {
+      const m = FLL.schedule.matches[FLL.state.match.current];
+      return { sched: FLL.clock(m.time), early: FLL.clock(FLL.state.breakUntil), note: (document.querySelector('.breaknote') || {}).innerText || '', view: window.__view };
+    });
+    check('#85 pair break strip shows the scheduled time, not the 2-minute early target', pairNote.view === 'pair-upnext-break' && pairNote.note.includes(pairNote.sched) && pairNote.early && !pairNote.note.includes(pairNote.early), pairNote);
+    await cmd('breakLabel', { lunch: true }); await sleep(600);
+    const lunchTime = await D.Q.evaluate(() => {
+      const m = FLL.schedule.matches[FLL.state.match.current];
+      return { sched: FLL.clock(m.time), early: FLL.clock(FLL.state.breakUntil), sub: (document.querySelector('.brksub') || {}).innerText || '' };
+    });
+    check('#85 lunch resume time is the scheduled match, not 2 minutes early', lunchTime.sub.includes(lunchTime.sched) && !lunchTime.sub.includes(lunchTime.early), lunchTime);
     const sq = await text(D.Q);
-    check('Saturday lunch: When we\'re back is the 12:45 match on tables 1-4', sat.ok && (await st()).kind === 'break' && /on a break/i.test(sq) && /when we're back/i.test(sq) && /Match 9\b/.test(sq) && /75440/.test(sq) && /63427/.test(sq) && /38269/.test(sq) && /65886/.test(sq) && !/73079/.test(sq) && !/do not need to queue/i.test(sq), sq.slice(0, 320));
+    check('Saturday lunch: When we\'re back is the 12:45 match on tables 1-4', /on a break/i.test(sq) && /when we're back/i.test(sq) && /Match 9\b/.test(sq) && /75440/.test(sq) && /63427/.test(sq) && /38269/.test(sq) && /65886/.test(sq) && !/73079/.test(sq) && !/do not need to queue/i.test(sq), sq.slice(0, 320));
 
     // ---- classic pack + plain theme toggles ----
     await control.click('#packSeg button[data-pack="classic"]'); await sleep(400);

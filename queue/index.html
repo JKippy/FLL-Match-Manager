@@ -142,15 +142,15 @@
     // Lunch is the operator's break mode (#75). The sign uses the width of the screen, and names the match
     // the break returns to. That index does not follow the clock, so an early or late break stays on it.
     if (brk && st.lunch) {
-      const when = st.breakUntil ? '<div class="brksub">Matches resume at <b>' + esc(clock(st.breakUntil)) + '</b></div>' : '';
       const nxt = L[up];
+      const when = nxt && nxt.time != null ? '<div class="brksub">Matches resume at <b>' + esc(clock(nxt.time)) + '</b></div>' : '';
       const back = nxt ? '<div class="qback"><div class="qback-k">When we\'re back</div><div class="qback-match">' + esc(matchLabel(nxt)) + '</div><div class="qback-teams">' + tablesOf(nxt).map(t => { const nm = teamName(v, nxt.teams[t]); return '<div class="qrow"><span class="qt">' + esc(tableName(v, t)) + '</span><span class="qn">' + esc(nxt.teams[t]) + '</span><span class="qname" title="' + esc(nm) + '">' + esc(nm) + '</span></div>'; }).join('') + '</div></div>' : '';
       return '<div class="queue qbreak"><div class="qbreak-card"><div class="qbreak-top"><div class="brkpill">Lunch</div><div class="qbreak-on">On a break</div></div><div class="qtime">' + esc(text) + '</div>' + when + back + '</div></div>';
     }
     const teamsInline = m => tablesOf(m).map(t => '<span class="t"><small>' + esc(tableName(v, t)) + '</small> ' + esc(m.teams[t]) + '</span>').join(' ');
     let now;
     if (liveIdx != null && L[liveIdx]) now = '<span class="k">Now playing</span><b>' + esc(matchLabel(L[liveIdx])) + '</b> ' + teamsInline(L[liveIdx]) + '<span class="clock">' + esc(text) + '</span>';
-    else if (brk) now = '<span class="k brk">' + esc(st.lunch ? 'Lunch' : 'Field break') + '</span><span>next match at <b>' + esc(clock(st.breakUntil)) + '</b></span><span class="clock">' + esc(text) + '</span>';
+    else if (brk) { const nxt = L[up]; const at = nxt && nxt.time != null ? clock(nxt.time) : ''; now = '<span class="k brk">' + esc(st.lunch ? 'Lunch' : 'Field break') + '</span>' + (at ? '<span>next match at <b>' + esc(at) + '</b></span>' : '') + '<span class="clock">' + esc(text) + '</span>'; }
     else if (doneIdx != null && L[doneIdx]) now = '<span class="k dim">Finished</span><b>' + esc(matchLabel(L[doneIdx])) + '</b> ' + teamsInline(L[doneIdx]);
     else now = '<span class="k dim">Field ready</span><span class="muted">waiting for the next match</span>';
     const card = (m, i) => m ? '<div class="qcard' + (i === 0 ? ' first' : '') + '"><div class="qhead"><span class="k">' + (i === 0 ? 'Next' : 'Then') + '</span><span>' + esc(matchLabel(m)) + '</span><span class="pr">' + esc(pairsOf(v, m).map(p => 'PAIR ' + p).join(' + ')) + '</span><span class="tm">' + esc(clock(m.time)) + '</span></div><div class="qrows">' + tablesOf(m).map(t => '<div class="qrow"><span class="qt">' + esc(tableName(v, t)) + '</span><span class="qn">' + esc(m.teams[t]) + '</span><span class="qname">' + esc(teamName(v, m.teams[t])) + '</span></div>').join('') + '</div></div>'
