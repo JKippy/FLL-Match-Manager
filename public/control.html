@@ -28,6 +28,7 @@
   header h1 { font-size:18px; margin:0; }
   header .sub { color:var(--dim); font-size:13px; margin-left:auto; display:flex; align-items:center; gap:6px; }
   .dot { width:10px; height:10px; border-radius:50%; background:var(--end); display:inline-block; }
+  #offlineBanner { margin:0 0 10px; padding:10px 12px; border-radius:10px; background:#3a2a10; color:#ffd27a; font-weight:800; letter-spacing:.02em; }
   .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; min-width:0; }
   .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); margin:0 0 10px; font-weight:600; display:flex; align-items:center; gap:8px; }
@@ -163,6 +164,7 @@
       <button id="modeBtn" type="button" aria-pressed="false" title="Simple mode shows only the match controls. Saved on this device only.">Simple mode</button></div>
     <div id="ringerHint" class="full" hidden role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#3a2a10;color:#ffd27a;font-size:14px;line-height:1.35"></div>
   </header>
+  <div id="offlineBanner" class="full hidden" role="status">OFFLINE – time may be off</div>
 
   <section class="card">
     <div id="matchPanel" class="hidden">
@@ -349,6 +351,7 @@
     }
   } catch (e) {}
   function setText(el, t) { if (typeof el === 'string') el = $(el); if (el.textContent !== t) el.textContent = t; }
+  function phoneOffline() { return !!(FLL.offline || navigator.onLine === false); }
   // Same rule for classes / disabled / checked: only touch the DOM when the value changes (per-frame writes swallow clicks in Safari).
   function setCls(el, c) { if (typeof el === 'string') el = $(el); if (el.className !== c) el.className = c; }
   function setDis(el, d) { if (typeof el === 'string') el = $(el); d = !!d; if (el.disabled !== d) el.disabled = d; }
@@ -357,8 +360,10 @@
 
   // ----- status / auth -----
   function status() {
-    setCls('dot', 'dot ' + (FLL.connected ? (FLL.synced ? 'ok' : 'wait') : ''));
-    setText('conn', FLL.connected ? (FLL.authed ? 'connected' : 'locked') : 'reconnecting…');
+    const off = phoneOffline();
+    setCls('dot', 'dot ' + (off ? '' : FLL.connected ? (FLL.synced ? 'ok' : 'wait') : ''));
+    setText('conn', off ? 'offline' : FLL.connected ? (FLL.authed ? 'connected' : 'locked') : 'reconnecting…');
+    $('offlineBanner').classList.toggle('hidden', !off);
     $('pinModal').classList.toggle('hidden', !(FLL.connected && FLL.pinRequired && !FLL.authed));
   }
   FLL.on('status', status); FLL.on('sync', status);
@@ -396,11 +401,12 @@
   let shownAction = null, shownState = null;
   const startGuard = FLL.tapGuard(() => shownState);
   function startPause() {
-    if (!FLL.state || !shownAction) return;
+    if (!FLL.state || !shownAction || phoneOffline()) return;
     const action = shownAction;
     startGuard.run(() => { FLLSound.unlock(); return FLL.cmd(action); });
   }
   function reset() {
+    if (phoneOffline()) return;
     const st = FLL.state; if (!st) return;
     if (FLL.isBreak()) { FLL.cmd('breakEnd'); return; }
     if ((st.status === 'running' || st.status === 'paused') && !confirm('Abort the match on ALL displays? (plays the foghorn; the match is not advanced)')) return;
@@ -523,6 +529,8 @@
       const bt = brk ? 'START MATCH' : st.status === 'running' ? 'PAUSE' : st.status === 'paused' ? 'RESUME' : 'START';
       if (b.textContent !== bt) b.textContent = bt; // only touch the DOM on change: rewriting every frame swallows clicks in Safari
       b.classList.toggle('pause', st.status === 'running' && !brk);
+      const off = phoneOffline();   // no network: don't queue a START/PAUSE that would land when the link returns (#89)
+      setDis(b, off); setDis('resetBtn', off);
       shownAction = st.status === 'running' && !brk ? 'pause' : 'start'; shownState = st;   // what a START/PAUSE tap means now
       const rt = brk ? 'END BREAK' : 'RESET'; if ($('resetBtn').textContent !== rt) $('resetBtn').textContent = rt;
       const matchOn = !brk && (st.status === 'running' || st.status === 'paused');

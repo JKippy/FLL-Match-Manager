@@ -133,9 +133,14 @@
     S.emit('status'); retry();
   }
   S._lost = stale => S.ws && lost(S.ws, !!stale);   // test hook
-  // The device lost its network: until fresh state arrives, the server may have paused the match without us knowing (#54).
-  window.addEventListener('offline', () => { if (!S.connected && !S.offline) { S.offline = true; S.emit('status'); } });
-  window.addEventListener('online', () => S.checkLink());   // network back: reconnect now instead of waiting out the backoff
+  // The device lost its network. Mark it immediately, even while the socket still looks open: TCP has not noticed yet,
+  // and the Head Ref page must not keep saying "connected" (#89). Until fresh state arrives the match may have been
+  // paused without us knowing, so local cues stay quiet (#54).
+  window.addEventListener('offline', () => { if (!S.offline) { S.offline = true; S.emit('status'); } });
+  window.addEventListener('online', () => {
+    if (S.connected && S.offline && navigator.onLine !== false) { S.offline = false; S.emit('status'); }
+    S.checkLink();   // network back: reconnect now instead of waiting out the backoff
+  });
   function retry() { if (retryT) return; retryT = setTimeout(open, backoff); backoff = Math.min(5000, backoff * 1.6); }
   function ping() {
     clearTimeout(pingTimer);
@@ -168,7 +173,12 @@
       case 'auth': S.authed = m.authed; S.authError = m.error || ''; S.emit('auth', m.authed, m); S.emit('status'); break;
       case 'state': {
         const prev = S.state; S.state = m;
-        if (S.stale || S.offline) { S.stale = false; S.offline = false; S.emit('status'); }
+        if (S.stale || S.offline) {
+          S.stale = false;
+          // Stay offline while the device itself still reports no network, even if a frame sneaks through (#89).
+          if (navigator.onLine !== false) S.offline = false;
+          S.emit('status');
+        }
         if (S._needReconcile) {
           S._needReconcile = false;
           const cmds = droppedCmds; droppedCmds = [];
