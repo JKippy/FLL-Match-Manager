@@ -10,7 +10,7 @@ const net = require('net');
 const crypto = require('crypto');
 const Sched = require('./lib/schedule');
 const QueueCfg = require('./lib/queue-config');
-const { toPublicQueue } = require('./lib/public-queue');
+const { toPublicQueue, DEFAULT_QR_URL, DEFAULT_CORNER_LINK } = require('./lib/public-queue');
 
 // ---------- config ----------
 const args = process.argv.slice(2);
@@ -61,11 +61,13 @@ const store = {
   layout: JSON.parse(JSON.stringify(Sched.DEFAULT_LAYOUT)),
   schedule: null,
   match: { current: 0, live: null, actualStarts: {}, autoAdvance: true },
-  nexus: { url: '', auto: false, lastFetch: null, error: null },
+  nexus: { url: '', auto: false, lastFetch: null, error: null }, // schedule fetch only; not the rankings QR
   // Target: start matches at most aheadMin ahead of schedule. A field break ends at (next scheduled start - aheadMin);
   // a break shorter than minBreakSec isn't worth showing (go straight to ready). START more than aheadMin early asks to confirm.
   breaks: { aheadMin: 2, minBreakSec: 30, auto: false, autoDelaySec: 5 },
-  display: { theme: 'nature', queueCount: 2 },
+  // qrUrl blank means the screens draw no code. A missing key (old state.json) is filled
+  // back to the default below; '' is kept. cornerLink is the top-left text on audience screens.
+  display: { theme: 'nature', queueCount: 2, qrUrl: DEFAULT_QR_URL, cornerLink: DEFAULT_CORNER_LINK },
   // Table referees (the /ref page): ready[matchIndex][table] = time they tapped READY; calls[table] = a "Call Head Ref" request.
   // used: a ref page has been opened at least once (only then does START check readiness); confirm: the Head Ref's on/off switch.
   refs: { ready: {}, calls: {}, callSeq: 0, used: false, confirm: true, keys: {} },
@@ -118,6 +120,17 @@ try {
   store.refs = Object.assign({ ready: {}, calls: {}, callSeq: 0, used: false, confirm: true }, store.refs);
   if (!store.refs.keys || typeof store.refs.keys !== 'object' || Array.isArray(store.refs.keys)) store.refs.keys = {};
 } catch (e) { if (e) loudly('Saved state could not be applied: ' + (e.message || e)); }
+// Same load path as a saved display object: Object.assign keeps a blank string and fills a
+// missing key from the defaults above. A null display, or a value that is not a string, is the default.
+function finishDisplay() {
+  const bad = !store.display || typeof store.display !== 'object' || Array.isArray(store.display);
+  if (bad) store.display = { theme: 'nature', queueCount: 2, qrUrl: DEFAULT_QR_URL, cornerLink: DEFAULT_CORNER_LINK };
+  if (typeof store.display.qrUrl !== 'string') store.display.qrUrl = DEFAULT_QR_URL;
+  else if (store.display.qrUrl.length > 4096) store.display.qrUrl = store.display.qrUrl.slice(0, 4096);
+  if (typeof store.display.cornerLink !== 'string') store.display.cornerLink = DEFAULT_CORNER_LINK;
+  else if (store.display.cornerLink.length > 4096) store.display.cornerLink = store.display.cornerLink.slice(0, 4096);
+}
+finishDisplay();
 // Saved synchronously and atomically BEFORE a command is acked: write a temp file, fsync, rename over state.json.
 // The previous good file is copied to state.json.bak (at most every 10 s) so a damaged file can be recovered.
 // Never copy a file that does not parse: the save after a recovery would otherwise replace the good backup with the truncated state.json (#6).
@@ -539,8 +552,11 @@ async function runCommand(msg, c) {
       save(); broadcastConfig(); return;
     }
     case 'displayConfig': {
+      finishDisplay();
       if (msg.theme) store.display.theme = msg.theme === 'plain' ? 'plain' : 'nature';
       if (msg.queueCount != null) store.display.queueCount = Math.max(0, Math.min(8, Math.round(+msg.queueCount) || 0));
+      if (typeof msg.qrUrl === 'string') store.display.qrUrl = msg.qrUrl.slice(0, 4096);
+      if (typeof msg.cornerLink === 'string') store.display.cornerLink = msg.cornerLink.slice(0, 4096);
       save(); broadcastConfig(); return;
     }
     case 'soundPack': store.sound.pack = msg.pack === 'classic' ? 'classic' : 'nature'; save(); broadcastConfig(); return;

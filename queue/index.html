@@ -16,9 +16,9 @@
   body.onbreak main { flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
   body.nature { background:radial-gradient(ellipse 90% 60% at 50% 115%, #0c2a18 0%, #05140c 45%, #000 85%); --card:rgba(14,24,19,.92); }
   header { display:flex; align-items:center; gap:.6em; padding:max(12px, env(safe-area-inset-top)) 16px 8px; position:sticky; top:0; z-index:2;
-    background:rgba(0,0,0,.92); font-size:clamp(15px, 3.4vw, 28px); color:var(--dim); }
-  #name { color:#fff; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
-  #updated { margin-left:auto; font-weight:800; color:#fff; font-variant-numeric:tabular-nums; font-size:.85em; }
+    background:rgba(0,0,0,.92); font-size:clamp(15px, 3.4vw, 28px); color:var(--dim); min-width:0; overflow:hidden; }
+  #name { color:#fff; font-weight:800; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #updated { margin-left:auto; flex:none; font-weight:800; color:#fff; font-variant-numeric:tabular-nums; font-size:.85em; }
   #updated.stale { color:var(--warn); }
   .dot { width:.7em; height:.7em; border-radius:50%; background:#ff3b30; flex:none; }
   .dot.ok { background:var(--run); } .dot.wait { background:var(--warn); }
@@ -64,19 +64,45 @@
   .qbreak .qname { flex:1 1 auto; min-width:0; color:#cfd4da; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow-wrap:anywhere; white-space:normal; }
   .muted { color:var(--dim); }
   .waiting { padding:18vh 10px; text-align:center; color:var(--dim); font-size:18px; }
-  @media (max-width: 720px) {
+  #nxqr { background:#fff; color:#111; border-radius:18px; padding:12px 12px 10px; display:flex; flex-direction:column; align-items:center; gap:8px;
+    width:min(42vh, 28vw, 440px); max-height:100%; box-sizing:border-box; }
+  #nxqr { overflow:hidden; }
+  #nxqr canvas { width:100%; height:auto; aspect-ratio:1; display:block; background:#fff; image-rendering:pixelated; }
+  #nxqrLabel { color:#111; font-weight:800; text-align:center; font-size:clamp(13px, 1.8vw, 22px); line-height:1.15; }
+  body.has-qr { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr); height:100%; min-height:0; overflow:hidden; }
+  body.has-qr .queue { gap:8px; }
+  body.has-qr .qrow { padding:4px 0; }
+  body.has-qr main { padding-top:4px; padding-bottom:8px; }
+  body.has-qr header { grid-column:1 / -1; grid-row:1; }
+  body.has-qr main { grid-column:1; grid-row:2; min-width:0; min-height:0; }
+  body.has-qr #nxqr { grid-column:2; grid-row:2; align-self:center; margin:8px 14px 8px 0; }
+  body.onbreak.has-qr { height:100%; overflow:hidden; }
+  @media (max-width: 800px) {
     .qnext { grid-template-columns:1fr; }
-    .qhead { font-size:28px; }
+    .qhead { font-size:22px; }
+    /* Phone: one short row, code beside its label, so the match list keeps the width of the screen. */
+    body.has-qr { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto minmax(0,1fr); }
+    body.has-qr #nxqr { grid-column:1; grid-row:2; width:auto; max-width:calc(100% - 16px); flex-direction:row; align-items:center; justify-self:end; margin:2px 8px 0 0; padding:4px 8px 4px 4px; gap:6px; }
+    body.has-qr #nxqr canvas { width:104px; height:104px; }
+    body.has-qr #nxqrLabel { font-size:12px; line-height:1.15; max-width:9em; text-align:left; }
+    body.has-qr main { grid-column:1; grid-row:3; padding:4px 10px 6px; }
+    body.has-qr .queue { gap:6px; }
+    body.has-qr .qrow { padding:2px 0; }
+    body.has-qr .qnow { padding:8px 10px; }
+    body.onbreak.has-qr #nxqr { justify-self:center; margin:4px auto 0; }
   }
 </style>
 </head>
 <body class="nature">
 <header>
   <span class="dot" id="dot"></span>
-  <span id="name">Queuing</span>
+  <span id="name">https://fll.nexus/fll/mm26</span>
   <span id="updated" role="status">Last updated --:--</span>
 </header>
 <main id="main"><div class="waiting">Waiting for the queue…</div></main>
+<div id="nxqr" class="hidden"><canvas id="nxqrCanvas"></canvas><div id="nxqrLabel"></div></div>
+<script src="/vendor/qrcode.js"></script>
+<script src="/vendor/nexus-qr.js"></script>
 <script>
 (function () {
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -162,16 +188,57 @@
     return '<div class="queue"><div class="qbox qnow">' + now + '</div><div class="qnext">' + card(L[up], 0) + card(L[up + 1], 1) + '</div>' + queued + '</div>';
   }
 
+  const QR_LABEL = 'Scan for rankings and score breakdowns';
+  const DEFAULT_QR = 'https://fll.nexus/region/fll/event/mm26/leaderboard';
+  const DEFAULT_CORNER = 'https://fll.nexus/fll/mm26';
+  let qrDrawn = '';
+  function paintQr() {
+    const d = view && view.display;
+    const link = d && typeof d.cornerLink === 'string' ? d.cornerLink : DEFAULT_CORNER;
+    const nameEl = $('name');
+    if (nameEl.textContent !== link) nameEl.textContent = link;
+    const url = (d && typeof d.qrUrl === 'string' ? d.qrUrl : (view ? DEFAULT_QR : '')).trim();
+    const box = $('nxqr');
+    const label = $('nxqrLabel');
+    if (!url) {
+      box.classList.add('hidden');
+      document.body.classList.remove('has-qr');
+      if (label.textContent) label.textContent = '';
+      return;
+    }
+    if (qrDrawn === 'fail:' + url) {
+      box.classList.add('hidden');
+      document.body.classList.remove('has-qr');
+      if (label.textContent) label.textContent = '';
+      return;
+    }
+    if (qrDrawn !== url) {
+      try {
+        drawNexusQr($('nxqrCanvas'), url);
+        qrDrawn = url;
+      } catch (e) {
+        console.warn('QR code could not be drawn: ' + (e && e.message || e));
+        qrDrawn = 'fail:' + url;
+        box.classList.add('hidden');
+        document.body.classList.remove('has-qr');
+        label.textContent = '';
+        return;
+      }
+    }
+    if (label.textContent !== QR_LABEL) label.textContent = QR_LABEL;
+    box.classList.remove('hidden');
+    document.body.classList.add('has-qr');
+  }
   function render() {
     document.body.classList.toggle('nature', !view || !view.display || view.display.theme !== 'plain');
     const onBreak = !!(view && view.timer && view.timer.kind === 'break' && view.timer.status === 'running' && view.timer.lunch);
     document.body.classList.toggle('onbreak', onBreak);
-    $('name').textContent = onBreak ? 'On a break' : 'Queuing';
     $('dot').className = 'dot' + (view ? (failed ? ' wait' : ' ok') : '');
     showUpdated(view);
     if (!view) { if (failed) $('main').innerHTML = '<div class="waiting">Waiting for the queue…</div>'; return; }
     const html = queueHtml(view);
     if (html !== lastHTML) { $('main').innerHTML = html; lastHTML = html; }
+    paintQr();
   }
 
   async function poll() {
