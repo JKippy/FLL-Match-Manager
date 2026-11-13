@@ -86,6 +86,27 @@ t('Mustang Madness export: Practice? TRUE/FALSE, AM/PM, tables 1-4 or 5-6, lunch
   assert.strictEqual(yes.matches[1].practice, false);
   assert.deepStrictEqual(yes.matches[0].teams, { 1: '100' });
 });
+t('Saturday Mustang Madness 2026: 40 matches, 01:03 PM, 4-digit 4182, lunch 11:43 AM to 12:45 PM', () => {
+  const txt = require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'mustang-madness-2026.csv'), 'utf8');
+  const p = S.parseCSV(txt, { date: '2026-11-14', name: 'Mustang Madness' });
+  assert.strictEqual(p.unknownColumns, undefined);
+  assert.strictEqual(p.dropped, undefined);
+  assert.strictEqual(p.problems, undefined);
+  assert.strictEqual(p.matches.length, 40);
+  assert.ok(p.matches.every(m => m.practice === false));
+  assert.strictEqual(hm(p.matches[0].time), 11 * 60);
+  assert.strictEqual(p.matches[0].teams['4'], '4182');
+  assert.strictEqual(hm(p.matches[7].time), 11 * 60 + 43);
+  assert.strictEqual(hm(p.matches[8].time), 12 * 60 + 45);
+  assert.strictEqual(p.matches[8].time - p.matches[7].time, 62 * 60 * 1000);
+  assert.deepStrictEqual(p.matches[8].teams, { 1: '75440', 2: '63427', 3: '38269', 4: '65886' });
+  assert.strictEqual(hm(p.matches[11].time), 13 * 60 + 3);
+  assert.strictEqual(new Date(p.matches[11].time).getDate(), 14);
+  const teams = new Set(p.matches.flatMap(m => Object.values(m.teams)));
+  assert.ok(!teams.has('TRUE') && !teams.has('FALSE') && !teams.has(''));
+  assert.ok([...teams].every(n => /^\d{4,5}$/.test(n)));
+  p.matches.forEach((m, i) => assert.deepStrictEqual(S.pairsFor(m, S.DEFAULT_LAYOUT), i % 2 ? ['C'] : ['A', 'B']));
+});
 t('Sample 6-table schedule: 24 matches, names, 5-min spacing with breaks, A+B / C alternation', () => {
   const txt = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'sample-schedule-6tables.csv'), 'utf8');
   const p = S.parseCSV(txt, { date: '2026-11-14' });

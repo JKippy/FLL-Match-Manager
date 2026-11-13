@@ -131,12 +131,19 @@
   .qqueue .ln { display:flex; gap:1em; flex-wrap:wrap; align-items:baseline; padding:.25vh 0; }
   .qqueue .ln b { min-width:7.5em; } .qqueue .ln .tm2 { color:var(--dim); min-width:5em; }
   .qqueue .t { white-space:nowrap; } .qqueue .t small { color:var(--dim); margin-right:.25em; } .qqueue .t i { color:#aab0b8; font-style:normal; font-size:.85em; margin-left:.3em; }
-  /* Lunch: the call list is replaced by an on-break sign. A field break that is not Lunch keeps Next / Then. */
-  .queue.qbreak { justify-content:center; align-items:center; text-align:center; }
-  .qbreak-card { display:flex; flex-direction:column; align-items:center; gap:1.4vh; width:min(100%, 18em); }
-  .qbreak-on { font-size:clamp(42px, 11vmin, 150px); font-weight:900; letter-spacing:.02em; line-height:.95; }
-  .qbreak-stop { font-size:clamp(22px, 4.6vmin, 64px); font-weight:800; }
-  .qbreak .time { font-size:min(24vw, 30vh); margin:.4vh 0; }
+  /* Lunch: a wide 16:9 message. A field break that is not Lunch keeps Next / Then. */
+  .queue.qbreak { justify-content:center; align-items:stretch; text-align:center; width:100%; height:100%; min-height:0; overflow:hidden; }
+  .qbreak-card { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1vh; width:100%; min-height:0; }
+  .qbreak-top { display:flex; align-items:center; justify-content:center; gap:.65em; width:100%; }
+  .qbreak-on { font-size:clamp(40px, 6.6vw, 120px); font-weight:900; letter-spacing:.01em; line-height:1; white-space:nowrap; }
+  .qbreak .time { font-size:clamp(56px, 10vw, 168px); margin:.2vh 0; }
+  .qbreak .brksub { white-space:nowrap; font-size:clamp(18px, 2.2vw, 36px); }
+  .qback { width:100%; margin-top:1vh; text-align:left; min-width:0; }
+  .qback-k { text-align:center; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:var(--warn); font-size:clamp(14px, 1.8vw, 28px); }
+  .qback-match { text-align:center; font-weight:900; font-size:clamp(28px, 3.6vw, 56px); line-height:1.05; margin:.2vh 0 .5vh; }
+  .qback-teams { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap:.2vh 1.6vw; width:100%; }
+  .qbreak .qrow { border-top:0; padding:.15vh 0; font-size:clamp(13px, 1.7vw, 28px); }
+  .qbreak .qrow .qn { font-size:1.35em; }
   /* nature theme (season: biodiversity) - subtle, behind everything */
   #deco { position:fixed; inset:0; pointer-events:none; z-index:0; display:none; }
   body.nature #deco { display:block; }
@@ -312,14 +319,19 @@
     const L = info.list, up = info.upIdx;
     // Lunch is the operator's break mode (#75). While that break is running, do not tell teams to queue.
     if (brk && st.lunch) {
-      const when = st.breakUntil ? `<div class="brksub">Matches resume at ${esc(FLL.clock(st.breakUntil))}</div>` : '';
-      return `<div class="queue qbreak"><div class="qbreak-card"><div class="brkpill">${esc(FLL.breakName())}</div><div class="qbreak-on">On a break</div><div class="qbreak-stop">Teams do not need to queue</div><div class="time break${text.length > 4 ? ' long' : ''}">${text}</div>${when}</div></div>`;
+      // The match the break returns to (the same index the call list calls "Next"), not whichever
+      // kickoff the clock has passed. Early or late, this stays put. No such match: hide the block.
+      // The resume time is that match's scheduled start, not breakUntil (2 min earlier, #85).
+      const nxt = L[up];
+      const when = nxt && nxt.time != null ? `<div class="brksub">Matches resume at <b>${esc(FLL.clock(nxt.time))}</b></div>` : '';
+      const back = nxt ? `<div class="qback"><div class="qback-k">When we're back</div><div class="qback-match">${esc(FLL.matchLabel(nxt))}</div><div class="qback-teams">${tablesOf(nxt).map(t => { const nm = FLL.teamName(nxt.teams[t]); return `<div class="qrow"><span class="qt">${esc(FLL.tableName(t))}</span><span class="qn">${esc(nxt.teams[t])}</span><span class="qname" title="${esc(nm)}">${esc(nm)}</span></div>`; }).join('')}</div></div>` : '';
+      return `<div class="queue qbreak"><div class="qbreak-card"><div class="qbreak-top"><div class="brkpill">${esc(FLL.breakName())}</div><div class="qbreak-on">On a break</div></div><div class="time break${text.length > 4 ? ' long' : ''}">${text}</div>${when}${back}</div></div>`;
     }
     const qn = FLL.config && FLL.config.display && FLL.config.display.queueCount != null ? FLL.config.display.queueCount : 2;
     const teamsInline = m => tablesOf(m).map(t => `<span class="t"><small>${esc(FLL.tableName(t))}</small> ${esc(m.teams[t])}</span>`).join(' ');
     let now;
     if (info.liveIdx != null) { const m = L[info.liveIdx]; now = `<span class="k">Now playing</span><b>${esc(FLL.matchLabel(m))}</b> ${teamsInline(m)}<span class="clock">${text}</span>`; }
-    else if (brk) now = `<span class="k brk">${esc(FLL.breakName())}</span><span>next match at <b>${esc(FLL.clock(st.breakUntil))}</b></span><span class="clock brk">${text}</span>`;
+    else if (brk) { const nxt = L[up]; const at = nxt && nxt.time != null ? FLL.clock(nxt.time) : ''; now = `<span class="k brk">${esc(FLL.breakName())}</span>${at ? `<span>next match at <b>${esc(at)}</b></span>` : ''}<span class="clock brk">${text}</span>`; }
     else if (info.doneIdx != null) now = `<span class="k dim">Finished</span><b>${esc(FLL.matchLabel(L[info.doneIdx]))}</b> ${teamsInline(L[info.doneIdx])}`;
     else now = `<span class="k dim">Field ready</span><span class="muted">waiting for the Head Referee to start</span>`;
     const card = (m, i) => m ? `<div class="qcard${i === 0 ? ' first' : ''}">
@@ -349,7 +361,11 @@
       if ($('delta').textContent || !$('delta').classList.contains('hidden')) { $('delta').textContent = ''; $('delta').className = 'pill hidden'; }
 
       const brk = FLL.isBreak();
-      const breakNote = () => `<div class="breaknote"><b>${esc(FLL.breakName().toUpperCase())}</b> ${text} · next match at ${esc(FLL.clock(st.breakUntil))}</div>`;
+      // The labeled time is the match's scheduled start. breakUntil is 2 min earlier and only ends the countdown (#85).
+      const breakNote = (m) => {
+        const when = m && m.time != null ? FLL.clock(m.time) : (info.list[info.upIdx] && info.list[info.upIdx].time != null ? FLL.clock(info.list[info.upIdx].time) : '');
+        return `<div class="breaknote"><b>${esc(FLL.breakName().toUpperCase())}</b> ${text}${when ? ` · next match at ${esc(when)}` : ''}</div>`;
+      };
       if (role === 'queue' && info) {
         $('label').textContent = brk && st.lunch ? 'On a break' : 'Queuing';
         setMain(queueView(st, info, text, brk), brk && st.lunch ? 'queue-break' : 'queue');
@@ -404,7 +420,7 @@
           // if the match that just ended was ours and auto-advance is off, look past it
           if (up && info.doneIdx != null && up.i === info.doneIdx) up = FLL.nextForPair(pair.id, info.doneIdx + 1);
           const justEnded = info.doneIdx != null && FLL.pairsOf(info.list[info.doneIdx]).includes(pair.id) && st.match.endedAt && FLL.serverNow() - st.match.endedAt < 10000;
-          const field = brk ? breakNote() : liveM ? `Field: ${esc(FLL.matchLabel(liveM))} in progress · ${text}` : '';
+          const field = brk ? breakNote(up && up.m) : liveM ? `Field: ${esc(FLL.matchLabel(liveM))} in progress · ${text}` : '';
           $('label').textContent = up ? 'Next match on this field' : '';   // pair screens: next for THIS pair, not the next match overall (#59)
           if (up) {
             const m = up.m;
