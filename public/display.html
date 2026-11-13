@@ -378,7 +378,7 @@
   }
   const tablesOf = m => Object.keys(m.teams).sort((a, b) => a - b);
   // "Ready" tag for a table whose referee tapped READY (rIdx = the match's index, or null when tags must not show).
-  const rtag = (rIdx, t) => rIdx != null && FLL.isReady(rIdx, t) ? '<span class="rtag" data-ready="' + esc(t) + '">✓ Ready</span>' : '';
+  const rtag = (rIdx, t) => rIdx != null && FLL.isReady(rIdx, t) ? '<span class="rtag" data-ready="' + esc(t) + '">Ready</span>' : '';
   function teamChip(t, num, rIdx) {
     return `<div class="tchip"><div class="tn">${esc(FLL.tableName(t))}</div><div class="num">${esc(num)}</div><div class="nm">${esc(FLL.teamName(num))}</div>${rtag(rIdx, t)}</div>`;
   }
