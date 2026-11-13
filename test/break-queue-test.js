@@ -273,7 +273,24 @@ function check(name, ok, detail) { ok ? passed++ : failed++; console.log((ok ? '
     await cmd('scheduleShift', { index: 8, time: Date.now() + 10 * 60000 }); await sleep(300);
     await cmd('breakLabel', { lunch: false });
     const sat = await cmd('endSession');
-    await D.Q.waitForFunction(() => FLL.state && FLL.state.kind === 'break' && /next match at/.test((document.querySelector('.qnow') || {}).innerText || ''), null, { timeout: 8000 });
+    let seen = null;
+    const until = Date.now() + 8000;
+    while (Date.now() < until) {
+      seen = await D.Q.evaluate(() => ({
+        kind: FLL.state && FLL.state.kind,
+        lunch: !!(FLL.state && FLL.state.lunch),
+        haveClock: !!FLL.haveClock,
+        samples: FLL.samples.length,
+        connected: !!FLL.connected,
+        text: (document.getElementById('main').textContent || '').replace(/\s+/g, ' ').slice(0, 240),
+      }));
+      if (seen.kind === 'break' && /next match at/i.test(seen.text)) break;
+      await sleep(200);
+    }
+    if (!(seen && seen.kind === 'break' && /next match at/i.test(seen.text))) {
+      const ctl = await st();
+      throw new Error('queue did not show the Saturday break: ' + JSON.stringify({ sat: { ok: sat.ok, error: sat.error, code: sat.code }, ctl: { kind: ctl.kind, status: ctl.status, lunch: ctl.lunch, last: ctl.lastAction }, seen }));
+    }
     const times = await D.Q.evaluate(() => {
       const m = FLL.schedule.matches[FLL.state.match.current];
       const top = (document.querySelector('.qnow') || {}).innerText || '';
