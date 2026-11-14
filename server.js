@@ -67,7 +67,8 @@ const store = {
   breaks: { aheadMin: 2, minBreakSec: 30, auto: false, autoDelaySec: 5 },
   // qrUrl blank means the screens draw no code. A missing key (old state.json) is filled
   // back to the default below; '' is kept. cornerLink is the top-left text on audience screens.
-  display: { theme: 'nature', queueCount: 2, qrUrl: DEFAULT_QR_URL, cornerLink: DEFAULT_CORNER_LINK },
+  // screensaver: ceremony mode, every display shows only the BIOGLOW logo and plays no sound. A missing key (old state.json) loads as off.
+  display: { theme: 'nature', queueCount: 2, qrUrl: DEFAULT_QR_URL, cornerLink: DEFAULT_CORNER_LINK, screensaver: false },
   // Table referees (the /ref page): ready[matchIndex][table] = time they tapped READY; calls[table] = a "Call Head Ref" request.
   // used: a ref page has been opened at least once (only then does START check readiness); confirm: the Head Ref's on/off switch.
   refs: { ready: {}, calls: {}, callSeq: 0, used: false, confirm: true, keys: {} },
@@ -261,6 +262,7 @@ function finishDisplay() {
   else if (store.display.qrUrl.length > 4096) store.display.qrUrl = store.display.qrUrl.slice(0, 4096);
   if (typeof store.display.cornerLink !== 'string') store.display.cornerLink = DEFAULT_CORNER_LINK;
   else if (store.display.cornerLink.length > 4096) store.display.cornerLink = store.display.cornerLink.slice(0, 4096);
+  store.display.screensaver = store.display.screensaver === true;
 }
 finishDisplay();
 // Saved synchronously and atomically BEFORE a command is acked: write a temp file, fsync, rename over state.json.
@@ -717,6 +719,7 @@ async function runCommand(msg, c) {
       if (msg.queueCount != null) store.display.queueCount = Math.max(0, Math.min(8, Math.round(+msg.queueCount) || 0));
       if (typeof msg.qrUrl === 'string') store.display.qrUrl = msg.qrUrl.slice(0, 4096);
       if (typeof msg.cornerLink === 'string') store.display.cornerLink = msg.cornerLink.slice(0, 4096);
+      if (msg.screensaver != null) store.display.screensaver = msg.screensaver === true;   // display only: the timer is not touched
       save(); broadcastConfig(); return;
     }
     case 'soundPack': store.sound.pack = msg.pack === 'classic' ? 'classic' : 'nature'; save(); broadcastConfig(); return;

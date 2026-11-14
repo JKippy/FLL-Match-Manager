@@ -180,6 +180,11 @@
     body.has-qr main { grid-row:3; }
     body.has-qr footer { grid-row:4; }
   }
+  /* Ceremony screensaver: only the BIOGLOW logo, on the logo's edge color. Everything else is hidden; the timer keeps running underneath. */
+  #saver { position:fixed; inset:0; z-index:100; background:#0f1821; padding:4vmin; }
+  #saver img { width:100%; height:100%; object-fit:contain; display:block; }
+  body.saver { background:#0f1821 !important; }
+  body.saver > :not(#saver) { visibility:hidden !important; }
 </style>
 </head>
 <body class="nature">
@@ -206,6 +211,7 @@
   <button class="btn" id="go">Tap to enable sound &amp; start</button>
   <div class="small">Sound and keep-awake need one tap on phones and tablets. For all-day use, also set Auto-Lock / Screen timeout to <b>Never</b> and keep the device plugged in. <a href="/display" style="color:#4c8dff">Change role</a></div>
 </div>
+<div id="saver" class="hidden"><img src="/bioglow-logo.png" alt="BIOGLOW"></div>
 
 <script src="/vendor/qrcode.js"></script>
 <script src="/vendor/nexus-qr.js"></script>
@@ -235,6 +241,24 @@
   }
   if (!role) { showPicker(); FLL.on('config', () => { if (!role) showPicker(); }); }
   else $('tap').classList.remove('hidden');
+  // ----- ceremony screensaver (Head Ref toggle, saved on the server): logo only and no sound of any kind. Cues still
+  // advance underneath, so nothing plays late when it is turned off. A click on the logo counts as the "tap to start".
+  const saverOn = () => !!(FLL.config && FLL.config.display && FLL.config.display.screensaver === true);
+  const rawPlay = FLLSound.play;
+  window.__saverMuted = [];
+  let early = [];   // a play asked for before the first config (the start-up test chime) waits to learn whether the screensaver is on
+  FLLSound.play = function (cue) {
+    if (!FLL.config) { early.push(arguments); return; }
+    if (saverOn()) { window.__saverMuted.push({ cue, at: FLL.perfNow() }); return; }
+    return rawPlay.apply(FLLSound, arguments);
+  };
+  FLL.on('config', () => { const q = early; early = []; q.forEach(a => FLLSound.play.apply(FLLSound, a)); });
+  function paintSaver() {
+    const on = saverOn();
+    if (document.body.classList.contains('saver') !== on) { document.body.classList.toggle('saver', on); $('saver').classList.toggle('hidden', !on); }
+  }
+  FLL.on('config', paintSaver);
+  $('saver').addEventListener('click', () => { if (role && !$('tap').classList.contains('hidden')) begin(); });
   $('tapTitle').textContent = role === 'main' ? 'Main projector' : role === 'queue' ? 'Queuing screen' : role === 'pair' ? 'Pair ' + pairId + ' screen' : 'Match timer';
 
   function begin() {

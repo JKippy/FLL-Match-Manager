@@ -129,6 +129,8 @@
   #pinModal .card { width:min(92vw, 360px); text-align:center; }
   #pinModal input { font-size:28px; text-align:center; width:100%; padding:12px; letter-spacing:.3em; margin:8px 0 12px; }
   #pinModal button { width:100%; background:var(--run); color:#000; font-size:18px; padding:14px; }
+  #saverBanner { margin:0 0 10px; padding:12px 14px; border-radius:10px; background:#0f1821; border:2px solid #c0de8a; color:#c9e88f; font-weight:900; font-size:18px; letter-spacing:.04em; }
+  #saverBanner span { font-weight:600; font-size:14px; letter-spacing:0; color:#e9edf2; margin-left:8px; }
   #err { color:var(--end); min-height:1.2em; font-size:14px; }
   .hidden { display:none !important; }
   /* Simple mode (#63): only what a Head Ref needs mid-event. Anything marked .adv is hidden; new controls stay visible by default. */
@@ -165,6 +167,7 @@
     <div id="ringerHint" class="full" hidden role="status" style="margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#3a2a10;color:#ffd27a;font-size:14px;line-height:1.35"></div>
   </header>
   <div id="offlineBanner" class="full hidden" role="status">OFFLINE – time may be off</div>
+  <div id="saverBanner" class="full hidden" role="status">SCREENSAVER ON<span>Every display shows only the BIOGLOW logo, with no sound. The timer keeps running.</span></div>
 
   <section class="card">
     <div id="matchPanel" class="hidden">
@@ -217,6 +220,9 @@
         <div class="row"><label>Don't bother showing a break shorter than <input type="number" id="brkMin" step="5" min="0" max="1800"> s</label></div>
         <div class="hint">If the break would be shorter than this, the screens skip it and go straight to the next match.</div>
       </details>
+    </div>
+    <div class="row">
+      <label title="Opening and closing ceremonies: every display (projector, pair, queue) shows only the BIOGLOW logo and plays no sound. The timer and matches are not changed."><input type="checkbox" id="saverToggle"> <b>Screensaver</b> (ceremonies: displays show only the BIOGLOW logo, no sound)</label>
     </div>
     <div class="hint adv"><kbd>Space</kbd> start / pause · <kbd>R</kbd> reset (abort plays the foghorn) · <kbd>←</kbd>/<kbd>→</kbd> previous / next match. Displays start together ~0.6 s after START.
       <label style="display:inline-flex;gap:6px;align-items:center;margin-left:6px"><input type="checkbox" id="autoAdv" checked> auto-advance after each match</label></div>
@@ -504,6 +510,14 @@
   $('queueCount').onchange = e => FLL.cmd('displayConfig', { queueCount: +e.target.value });
   $('qrUrl').onchange = e => FLL.cmd('displayConfig', { qrUrl: e.target.value });
   $('cornerLink').onchange = e => FLL.cmd('displayConfig', { cornerLink: e.target.value });
+  let saverPending = 0;
+  function applySaver(c) {
+    const on = !!(c.display && c.display.screensaver === true);
+    if (!saverPending) $('saverToggle').checked = on;
+    $('saverBanner').classList.toggle('hidden', !on);
+  }
+  $('saverToggle').onchange = e => { const id = ++saverPending; FLL.cmd('displayConfig', { screensaver: e.target.checked }).catch(() => {}).then(() => { if (saverPending === id) { saverPending = 0; if (FLL.config) applySaver(FLL.config); } }); };
+  FLL.on('config', applySaver);
   function applyBreakCfg(c) {
     const b = c.breaks || {}, a = document.activeElement;
     if (a !== $('brkAhead')) $('brkAhead').value = b.aheadMin;
